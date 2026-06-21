@@ -240,6 +240,121 @@ void sfz::Sfizz::hdPolyAftertouch(int delay, int noteNumber, float aftertouch) n
     synth->synth.hdPolyAftertouch(delay, noteNumber, aftertouch);
 }
 
+void sfz::Sfizz::noteOn(int delay, int channel, int noteNumber, int velocity) noexcept
+{
+    synth->synth.noteOn(delay, channel, noteNumber, velocity);
+}
+
+void sfz::Sfizz::hdNoteOn(int delay, int channel, int noteNumber, float velocity) noexcept
+{
+    synth->synth.hdNoteOn(delay, channel, noteNumber, velocity);
+}
+
+void sfz::Sfizz::noteOff(int delay, int channel, int noteNumber, int velocity) noexcept
+{
+    synth->synth.noteOff(delay, channel, noteNumber, velocity);
+}
+
+void sfz::Sfizz::hdNoteOff(int delay, int channel, int noteNumber, float velocity) noexcept
+{
+    synth->synth.hdNoteOff(delay, channel, noteNumber, velocity);
+}
+
+void sfz::Sfizz::cc(int delay, int channel, int ccNumber, int ccValue) noexcept
+{
+    synth->synth.cc(delay, channel, ccNumber, ccValue);
+}
+
+void sfz::Sfizz::hdcc(int delay, int channel, int ccNumber, float normValue) noexcept
+{
+    synth->synth.hdcc(delay, channel, ccNumber, normValue);
+}
+
+void sfz::Sfizz::pitchWheel(int delay, int channel, int pitch) noexcept
+{
+    synth->synth.pitchWheel(delay, channel, pitch);
+}
+
+void sfz::Sfizz::hdPitchWheel(int delay, int channel, float pitch) noexcept
+{
+    synth->synth.hdPitchWheel(delay, channel, pitch);
+}
+
+void sfz::Sfizz::channelAftertouch(int delay, int channel, int aftertouch) noexcept
+{
+    synth->synth.channelAftertouch(delay, channel, aftertouch);
+}
+
+void sfz::Sfizz::hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept
+{
+    synth->synth.hdChannelAftertouch(delay, channel, normAftertouch);
+}
+
+void sfz::Sfizz::polyAftertouch(int delay, int channel, int noteNumber, int aftertouch) noexcept
+{
+    synth->synth.polyAftertouch(delay, channel, noteNumber, aftertouch);
+}
+
+void sfz::Sfizz::hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept
+{
+    synth->synth.hdPolyAftertouch(delay, channel, noteNumber, normAftertouch);
+}
+
+void sfz::Sfizz::setMPEEnabled(bool enabled) noexcept
+{
+    synth->synth.setMPEEnabled(enabled);
+}
+
+bool sfz::Sfizz::getMPEEnabled() const noexcept
+{
+    return synth->synth.getMPEEnabled();
+}
+
+void sfz::Sfizz::setMPEPitchBendRange(float masterSemitones, float perNoteSemitones) noexcept
+{
+    synth->synth.setMPEPitchBendRange(masterSemitones, perNoteSemitones);
+}
+
+float sfz::Sfizz::getMPEMasterPitchBendRange() const noexcept
+{
+    return synth->synth.getMPEMasterPitchBendRange();
+}
+
+float sfz::Sfizz::getMPEPerNotePitchBendRange() const noexcept
+{
+    return synth->synth.getMPEPerNotePitchBendRange();
+}
+
+void sfz::Sfizz::setMPEMasterBendAutoConfigEnabled(bool enabled) noexcept
+{
+    synth->synth.setMPEMasterBendAutoConfigEnabled(enabled);
+}
+
+bool sfz::Sfizz::getMPEMasterBendAutoConfigEnabled() const noexcept
+{
+    return synth->synth.getMPEMasterBendAutoConfigEnabled();
+}
+
+void sfz::Sfizz::setMPEPerNoteBendAutoConfigEnabled(bool enabled) noexcept
+{
+    synth->synth.setMPEPerNoteBendAutoConfigEnabled(enabled);
+}
+
+bool sfz::Sfizz::getMPEPerNoteBendAutoConfigEnabled() const noexcept
+{
+    return synth->synth.getMPEPerNoteBendAutoConfigEnabled();
+}
+
+int sfz::Sfizz::getDroppedPolyKpOnMemberCount() const noexcept
+{
+    return synth->synth.getDroppedPolyKpOnMemberCount();
+}
+
+int sfz::Sfizz::getDroppedManagerOnlyMessageCount() const noexcept
+{
+    return synth->synth.getDroppedManagerOnlyMessageCount();
+}
+
 void sfz::Sfizz::tempo(int delay, float secondsPerBeat) noexcept
 {
     synth->synth.tempo(delay, secondsPerBeat);

@@ -40,6 +40,7 @@
 #include <absl/types/span.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <random>
 #include <utility>
@@ -48,6 +49,38 @@ namespace sfz {
 
 // unless set to permissive, the loader rejects sfz files with errors
 static constexpr bool loaderParsesPermissively = true;
+
+// MPE 1.0 §2.3.1 / §2.3.3 (Appendix E Table 5): CCs whose effect is
+// zone-wide and that should therefore only be honoured on the Manager
+// Channel. Damper / Portamento / Sostenuto / Soft / Legato Footswitch /
+// Hold 2 (CCs 64-69), All Sounds Off / Reset All Controllers / All Notes
+// Off / Omni Off / Omni On (CCs 120-125, excluding 122 — Local Control is
+// irrelevant for a software synth and the spec doesn't class it here),
+// and Bank Select MSB/LSB (CCs 0 and 32, which queue state for a later
+// Program Change). CC#7 (Volume), CC#10 (Pan) and CC#11 (Expression) are
+// intentionally NOT listed — the spec marks them optional on both channel
+// types so we leave them on the per-channel path.
+static constexpr bool isManagerOnlyCC(int ccNumber) noexcept
+{
+    switch (ccNumber) {
+    case 0:
+    case 32:
+    case 64:
+    case 65:
+    case 66:
+    case 67:
+    case 68:
+    case 69:
+    case 120:
+    case 121:
+    case 123:
+    case 124:
+    case 125:
+        return true;
+    default:
+        return false;
+    }
+}
 
 Synth::Synth()
 : impl_(new Impl) // NOLINT: (paul) I don't get why clang-tidy complains here
@@ -1257,15 +1290,34 @@ void Synth::noteOn(int delay, int noteNumber, int velocity) noexcept
 
 void Synth::hdNoteOn(int delay, int noteNumber, float normalizedVelocity) noexcept
 {
+    hdNoteOn(delay, 0, noteNumber, normalizedVelocity);
+}
+
+void Synth::noteOn(int delay, int channel, int noteNumber, int velocity) noexcept
+{
+    const float normalizedVelocity = normalizeVelocity(velocity);
+    hdNoteOn(delay, channel, noteNumber, normalizedVelocity);
+}
+
+void Synth::hdNoteOn(int delay, int channel, int noteNumber, float normalizedVelocity) noexcept
+{
     ASSERT(noteNumber < 128);
     ASSERT(noteNumber >= 0);
     Impl& impl = *impl_;
+    // When MPE is disabled, collapse all incoming channels to the Manager
+    // Channel so the legacy and *MPE API surfaces behave identically — all
+    // events land in MidiState channel-0 storage and voices get
+    // triggerChannel_=0. The legacy non-MPE API already passes channel=0
+    // here, so this only affects callers that reached the *MPE entry directly
+    // with a non-zero channel while MPE was off.
+    if (!impl.mpeEnabled_)
+        channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
     if (impl.lastKeyswitchLists_[noteNumber].empty())
         impl.resources_.getMidiState().noteOnEvent(delay, noteNumber, normalizedVelocity);
 
-    impl.noteOnDispatch(delay, noteNumber, normalizedVelocity);
+    impl.noteOnDispatch(delay, channel, noteNumber, normalizedVelocity);
 }
 
 void Synth::noteOff(int delay, int noteNumber, int velocity) noexcept
@@ -1276,9 +1328,22 @@ void Synth::noteOff(int delay, int noteNumber, int velocity) noexcept
 
 void Synth::hdNoteOff(int delay, int noteNumber, float normalizedVelocity) noexcept
 {
+    hdNoteOff(delay, 0, noteNumber, normalizedVelocity);
+}
+
+void Synth::noteOff(int delay, int channel, int noteNumber, int velocity) noexcept
+{
+    const float normalizedVelocity = normalizeVelocity(velocity);
+    hdNoteOff(delay, channel, noteNumber, normalizedVelocity);
+}
+
+void Synth::hdNoteOff(int delay, int channel, int noteNumber, float normalizedVelocity) noexcept
+{
     ASSERT(noteNumber < 128);
     ASSERT(noteNumber >= 0);
     Impl& impl = *impl_;
+    if (!impl.mpeEnabled_)
+        channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
     // FIXME: Some keyboards (e.g. Casio PX5S) can send a real note-off velocity. In this case, do we have a
@@ -1292,16 +1357,20 @@ void Synth::hdNoteOff(int delay, int noteNumber, float normalizedVelocity) noexc
     const auto replacedVelocity = midiState.getNoteVelocity(noteNumber);
 
     for (auto& voice : impl.voiceManager_)
-        voice.registerNoteOff(delay, noteNumber, replacedVelocity);
+        voice.registerNoteOff(delay, channel, noteNumber, replacedVelocity);
 
-    impl.noteOffDispatch(delay, noteNumber, replacedVelocity);
+    impl.noteOffDispatch(delay, channel, noteNumber, replacedVelocity);
 }
 
 void Synth::Impl::startVoice(Layer* layer, int delay, const TriggerEvent& triggerEvent, SisterVoiceRingBuilder& ring) noexcept
 {
     const Region& region = layer->getRegion();
 
-    voiceManager_.checkPolyphony(&region, delay, triggerEvent);
+    // Bias voice stealing toward same-channel candidates only when MPE is
+    // enabled. With MPE off, preferredChannel = -1 reproduces the
+    // pre-MPE-fork stealing behavior exactly.
+    const int preferredChannel = mpeEnabled_ ? triggerEvent.channel : -1;
+    voiceManager_.checkPolyphony(&region, delay, triggerEvent, preferredChannel);
     Voice* selectedVoice = voiceManager_.findFreeVoice();
     if (selectedVoice == nullptr)
         return;
@@ -1317,16 +1386,16 @@ void Synth::Impl::checkOffGroups(const Region* region, int delay, int number, bo
         if (voice.checkOffGroup(region, delay, number)) {
             const TriggerEvent& event = voice.getTriggerEvent();
             if (event.type == TriggerEventType::NoteOn && !chokedByCC)
-                noteOffDispatch(delay, event.number, event.value);
+                noteOffDispatch(delay, event.channel, event.number, event.value);
         }
     }
 }
 
-void Synth::Impl::noteOffDispatch(int delay, int noteNumber, float velocity) noexcept
+void Synth::Impl::noteOffDispatch(int delay, int channel, int noteNumber, float velocity) noexcept
 {
     const auto randValue = randNoteDistribution_(Random::randomGenerator);
     SisterVoiceRingBuilder ring;
-    const TriggerEvent triggerEvent { TriggerEventType::NoteOff, noteNumber, velocity };
+    const TriggerEvent triggerEvent { TriggerEventType::NoteOff, noteNumber, velocity, channel };
 
     for (Layer* layer : upKeyswitchLists_[noteNumber])
         layer->keySwitched_ = true;
@@ -1346,7 +1415,7 @@ void Synth::Impl::noteOffDispatch(int delay, int noteNumber, float velocity) noe
     }
 }
 
-void Synth::Impl::noteOnDispatch(int delay, int noteNumber, float velocity) noexcept
+void Synth::Impl::noteOnDispatch(int delay, int channel, int noteNumber, float velocity) noexcept
 {
     const auto randValue = randNoteDistribution_(Random::randomGenerator);
     SisterVoiceRingBuilder ring;
@@ -1376,7 +1445,7 @@ void Synth::Impl::noteOnDispatch(int delay, int noteNumber, float velocity) noex
                 continue;
 
             checkOffGroups(&region, delay, noteNumber);
-            TriggerEvent triggerEvent { TriggerEventType::NoteOn, noteNumber, velocity };
+            TriggerEvent triggerEvent { TriggerEventType::NoteOn, noteNumber, velocity, channel };
             startVoice(layer, delay, triggerEvent, ring);
         }
     }
@@ -1426,10 +1495,10 @@ void Synth::cc(int delay, int ccNumber, int ccValue) noexcept
     hdcc(delay, ccNumber, normalizedCC);
 }
 
-void Synth::Impl::ccDispatch(int delay, int ccNumber, float value, int extendedArg) noexcept
+void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, int extendedArg) noexcept
 {
     SisterVoiceRingBuilder ring;
-    TriggerEvent triggerEvent { TriggerEventType::CC, ccNumber, value };
+    TriggerEvent triggerEvent { TriggerEventType::CC, ccNumber, value, channel };
     const auto randValue = randNoteDistribution_(Random::randomGenerator);
     MidiState& midiState = resources_.getMidiState();
     for (Layer* layer : ccActivationLists_[ccNumber]) {
@@ -1461,20 +1530,45 @@ void Synth::Impl::ccDispatch(int delay, int ccNumber, float value, int extendedA
 
 void Synth::hdcc(int delay, int ccNumber, float normValue) noexcept
 {
+    hdcc(delay, 0, ccNumber, normValue);
+}
+
+void Synth::cc(int delay, int channel, int ccNumber, int ccValue) noexcept
+{
+    const auto normalizedCC = normalizeCC(ccValue);
+    hdcc(delay, channel, ccNumber, normalizedCC);
+}
+
+void Synth::hdcc(int delay, int channel, int ccNumber, float normValue) noexcept
+{
     Impl& impl = *impl_;
-    impl.performHdcc(delay, ccNumber, normValue, true);
+    impl.performHdcc(delay, channel, ccNumber, normValue, true);
 }
 
 void Synth::automateHdcc(int delay, int ccNumber, float normValue) noexcept
 {
     Impl& impl = *impl_;
-    impl.performHdcc(delay, ccNumber, normValue, false);
+    impl.performHdcc(delay, 0, ccNumber, normValue, false);
 }
 
-void Synth::Impl::performHdcc(int delay, int ccNumber, float normValue, bool asMidi, int extendedArg) noexcept
+void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normValue, bool asMidi, int extendedArg) noexcept
 {
     ASSERT(ccNumber < config::numCCs);
     ASSERT(ccNumber >= 0);
+
+    // MPE 1.0 §2.3.1 / §2.3.3: zone-wide messages (pedal CCs, mode/reset,
+    // Bank Select) must only be honoured on the Manager Channel. Drop on
+    // Member Channels before any side effects — the global early-returns
+    // for All-Notes-Off / Reset-All-Controllers further down would otherwise
+    // fire on a Member-Channel arrival, and Bank Select on a Member Channel
+    // would queue a bank for a Program Change that the host then has to
+    // filter separately. Gate on asMidi so internal automation paths
+    // (which conceptually target the Manager Channel) keep working.
+    // Lower Zone only (Manager = channel 0); revisit when Upper Zone lands.
+    if (asMidi && mpeEnabled_ && channel != 0 && isManagerOnlyCC(ccNumber)) {
+        ++droppedManagerOnlyCCs_;
+        return;
+    }
 
     ScopedTiming logger { dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1494,13 +1588,108 @@ void Synth::Impl::performHdcc(int delay, int ccNumber, float normValue, bool asM
             midiState.allNotesOff(delay);
             return;
         }
+
+        handleRpnControlCC(channel, ccNumber, normValue);
     }
+
+    // Normalize channel AFTER the RPN parser. The parser needs the real
+    // channel to distinguish Manager-vs-Member MCM messages and route
+    // RPN 0 (Pitch Bend Sensitivity) updates to the correct zone (master
+    // bend range vs per-note bend range). The MidiState write + voice CC
+    // updates that follow are the channel-aware storage path, and with
+    // MPE off they should land in channel-0 storage so consumers don't
+    // need to gate dispatch themselves.
+    if (!mpeEnabled_)
+        channel = 0;
 
     for (auto& voice : voiceManager_)
         voice.registerCC(delay, ccNumber, normValue);
 
-    ccDispatch(delay, ccNumber, normValue, extendedArg);
-    midiState.ccEvent(delay, ccNumber, normValue);
+    ccDispatch(delay, channel, ccNumber, normValue, extendedArg);
+    midiState.ccEvent(delay, channel, ccNumber, normValue);
+}
+
+void Synth::Impl::handleRpnControlCC(int channel, int ccNumber, float normValue) noexcept
+{
+    if (channel < 0 || channel >= 16)
+        return;
+
+    RpnParserState& state = rpnParsers_[channel];
+    const auto to7Bit = [](float v) {
+        return static_cast<int>(std::lround(std::min(std::max(v, 0.0f), 1.0f) * 127.0f));
+    };
+
+    switch (ccNumber) {
+    case 99: { // NRPN MSB
+        const int data7 = to7Bit(normValue);
+        state.selectedRpn = static_cast<uint16_t>(
+            (state.selectedRpn & 0x007F) | ((data7 & 0x7F) << 7));
+        state.nrpnMode = true;
+        return;
+    }
+    case 98: { // NRPN LSB
+        const int data7 = to7Bit(normValue);
+        state.selectedRpn = static_cast<uint16_t>(
+            (state.selectedRpn & 0x3F80) | (data7 & 0x7F));
+        state.nrpnMode = true;
+        return;
+    }
+    case 101: { // RPN MSB
+        const int data7 = to7Bit(normValue);
+        state.selectedRpn = static_cast<uint16_t>(
+            (state.selectedRpn & 0x007F) | ((data7 & 0x7F) << 7));
+        state.nrpnMode = false;
+        return;
+    }
+    case 100: { // RPN LSB
+        const int data7 = to7Bit(normValue);
+        state.selectedRpn = static_cast<uint16_t>(
+            (state.selectedRpn & 0x3F80) | (data7 & 0x7F));
+        state.nrpnMode = false;
+        return;
+    }
+    case 6: { // Data Entry MSB — dispatch RPN 0 / RPN 6 handlers
+        if (state.nrpnMode || state.selectedRpn == RpnParserState::kNullRpn)
+            return;
+        const int data7 = to7Bit(normValue);
+        if (state.selectedRpn == 6) {
+            // MPE Configuration Message. Lower Zone master only — channel 0
+            // in sfizz's 0-indexed convention (MIDI channel 1 on the wire).
+            // Upper Zone (channel 15 / MIDI 16) is deferred per the story's
+            // open-questions section; no commercial MPE controller in our
+            // target set uses it. data7 == 0 disables MPE, 1..15 enables
+            // and announces member-channel count (informational — sfizz
+            // already accepts events on all 16 channels regardless).
+            if (channel != 0)
+                return;
+            mpeEnabled_ = (data7 >= 1 && data7 <= 15);
+        } else if (state.selectedRpn == 0) {
+            // Pitch Bend Sensitivity. Master-channel RPN updates the
+            // master range; member-channel RPN updates the per-note range
+            // applied to all members (commercial controllers send the
+            // same value on every member channel).
+            const float newRange = static_cast<float>(data7);
+            if (channel == 0) {
+                if (!mpeMasterBendAutoConfigEnabled_)
+                    return;
+                mpeMasterPitchBendRange_ = newRange;
+                resources_.getMidiState().setMPEPitchBendRange(
+                    newRange, mpePerNotePitchBendRange_);
+            } else {
+                if (!mpePerNoteBendAutoConfigEnabled_)
+                    return;
+                mpePerNotePitchBendRange_ = newRange;
+                resources_.getMidiState().setMPEPitchBendRange(
+                    mpeMasterPitchBendRange_, newRange);
+            }
+        }
+        return;
+    }
+    case 38: // Data Entry LSB — cents fraction for RPN 0, deferred to v2.
+        return;
+    default:
+        return;
+    }
 }
 
 void Synth::Impl::setDefaultHdcc(int ccNumber, float value)
@@ -1534,20 +1723,37 @@ void Synth::pitchWheel(int delay, int pitch) noexcept
 
 void Synth::hdPitchWheel(int delay, float normalizedPitch) noexcept
 {
+    hdPitchWheel(delay, 0, normalizedPitch);
+}
+
+void Synth::pitchWheel(int delay, int channel, int pitch) noexcept
+{
+    const float normalizedPitch = normalizeBend(float(pitch));
+    hdPitchWheel(delay, channel, normalizedPitch);
+}
+
+void Synth::hdPitchWheel(int delay, int channel, float normalizedPitch) noexcept
+{
     Impl& impl = *impl_;
+    if (!impl.mpeEnabled_)
+        channel = 0;
 
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
-    impl.resources_.getMidiState().pitchBendEvent(delay, normalizedPitch);
+    impl.resources_.getMidiState().pitchBendEvent(delay, channel, normalizedPitch);
 
-    for (const Impl::LayerPtr& layer : impl.layers_) {
+    // M3b: layer- and voice-side registration of pitch bend stays
+    // channel-agnostic for now. Voices read the channel-correct value
+    // via per-voice triggerChannel_-aware MidiState reads, so the
+    // master-channel registerPitchWheel call is harmless cross-talk
+    // bookkeeping. A follow-up commit can filter these to voices on
+    // the matching channel when MPE is enabled.
+    for (const Impl::LayerPtr& layer : impl.layers_)
         layer->registerPitchWheel(normalizedPitch);
-    }
 
-    for (auto& voice : impl.voiceManager_) {
+    for (auto& voice : impl.voiceManager_)
         voice.registerPitchWheel(delay, normalizedPitch);
-    }
 
-    impl.performHdcc(delay, ExtendedCCs::pitchBend, normalizedPitch, false);
+    impl.performHdcc(delay, channel, ExtendedCCs::pitchBend, normalizedPitch, false);
 }
 
 void Synth::programChange(int delay, int program) noexcept
@@ -1567,20 +1773,31 @@ void Synth::channelAftertouch(int delay, int aftertouch) noexcept
 
 void Synth::hdChannelAftertouch(int delay, float normAftertouch) noexcept
 {
+    hdChannelAftertouch(delay, 0, normAftertouch);
+}
+
+void Synth::channelAftertouch(int delay, int channel, int aftertouch) noexcept
+{
+    const float normalizedAftertouch = normalize7Bits(aftertouch);
+    hdChannelAftertouch(delay, channel, normalizedAftertouch);
+}
+
+void Synth::hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept
+{
     Impl& impl = *impl_;
+    if (!impl.mpeEnabled_)
+        channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
-    impl.resources_.getMidiState().channelAftertouchEvent(delay, normAftertouch);
+    impl.resources_.getMidiState().channelAftertouchEvent(delay, channel, normAftertouch);
 
-    for (const Impl::LayerPtr& layerPtr : impl.layers_) {
+    for (const Impl::LayerPtr& layerPtr : impl.layers_)
         layerPtr->registerAftertouch(normAftertouch);
-    }
 
-    for (auto& voice : impl.voiceManager_) {
+    for (auto& voice : impl.voiceManager_)
         voice.registerAftertouch(delay, normAftertouch);
-    }
 
-    impl.performHdcc(delay, ExtendedCCs::channelAftertouch, normAftertouch, false);
+    impl.performHdcc(delay, channel, ExtendedCCs::channelAftertouch, normAftertouch, false);
 }
 
 void Synth::polyAftertouch(int delay, int noteNumber, int aftertouch) noexcept
@@ -1591,15 +1808,112 @@ void Synth::polyAftertouch(int delay, int noteNumber, int aftertouch) noexcept
 
 void Synth::hdPolyAftertouch(int delay, int noteNumber, float normAftertouch) noexcept
 {
+    hdPolyAftertouch(delay, 0, noteNumber, normAftertouch);
+}
+
+void Synth::polyAftertouch(int delay, int channel, int noteNumber, int aftertouch) noexcept
+{
+    const float normalizedAftertouch = normalize7Bits(aftertouch);
+    hdPolyAftertouch(delay, channel, noteNumber, normalizedAftertouch);
+}
+
+void Synth::hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept
+{
     Impl& impl = *impl_;
+    if (!impl.mpeEnabled_)
+        channel = 0;
+
+    // MPE 1.0 §2.2.7 / Appendix E Table 5: Polyphonic Key Pressure is
+    // prohibited on Member Channels (per-note pressure flows through Channel
+    // Pressure under MPE; Poly KP on Member Channels would compound it).
+    // Manager Channel (Lower Zone: channel 0) Poly KP is permitted at the
+    // discretion of the implementer for compatibility with non-MPE-aware
+    // devices. Drop early so dropped events neither update MidiState nor
+    // reach the mod-matrix; the polyphonicAftertouch ExtendedCC path further
+    // down runs only on accepted events.
+    if (impl.mpeEnabled_ && channel != 0) {
+        ++impl.droppedPolyKpOnMember_;
+        return;
+    }
+
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
-    impl.resources_.getMidiState().polyAftertouchEvent(delay, noteNumber, normAftertouch);
+    impl.resources_.getMidiState().polyAftertouchEvent(delay, channel, noteNumber, normAftertouch);
 
     for (auto& voice : impl.voiceManager_)
         voice.registerPolyAftertouch(delay, noteNumber, normAftertouch);
 
-    impl.performHdcc(delay, ExtendedCCs::polyphonicAftertouch, normAftertouch, false, noteNumber);
+    impl.performHdcc(delay, channel, ExtendedCCs::polyphonicAftertouch, normAftertouch, false, noteNumber);
+}
+
+void Synth::setMPEEnabled(bool enabled) noexcept
+{
+    Impl& impl = *impl_;
+    const bool wasEnabled = impl.mpeEnabled_;
+    impl.mpeEnabled_ = enabled;
+    // On the MPE on→off transition, flush active voices. Voices triggered
+    // while MPE was enabled carry triggerChannel_ > 0, and after the flip
+    // all subsequent *MPE / legacy calls normalize channel to 0 — so
+    // matching note-offs can no longer reach them. allSoundOff() resets
+    // all voices; brief silence on a manual toggle flip is acceptable.
+    // off→on needs no flush: channel-0 voices match the new master channel
+    // semantics, and new notes pick up incoming channels naturally.
+    if (wasEnabled && !enabled)
+        allSoundOff();
+}
+
+bool Synth::getMPEEnabled() const noexcept
+{
+    return impl_->mpeEnabled_;
+}
+
+void Synth::setMPEPitchBendRange(float masterSemitones, float perNoteSemitones) noexcept
+{
+    impl_->mpeMasterPitchBendRange_ = masterSemitones;
+    impl_->mpePerNotePitchBendRange_ = perNoteSemitones;
+    // Mirror into MidiState so per-voice bend application can pick up the
+    // configured range without reaching back into Synth::Impl.
+    impl_->resources_.getMidiState().setMPEPitchBendRange(masterSemitones, perNoteSemitones);
+}
+
+float Synth::getMPEMasterPitchBendRange() const noexcept
+{
+    return impl_->mpeMasterPitchBendRange_;
+}
+
+float Synth::getMPEPerNotePitchBendRange() const noexcept
+{
+    return impl_->mpePerNotePitchBendRange_;
+}
+
+void Synth::setMPEMasterBendAutoConfigEnabled(bool enabled) noexcept
+{
+    impl_->mpeMasterBendAutoConfigEnabled_ = enabled;
+}
+
+bool Synth::getMPEMasterBendAutoConfigEnabled() const noexcept
+{
+    return impl_->mpeMasterBendAutoConfigEnabled_;
+}
+
+void Synth::setMPEPerNoteBendAutoConfigEnabled(bool enabled) noexcept
+{
+    impl_->mpePerNoteBendAutoConfigEnabled_ = enabled;
+}
+
+bool Synth::getMPEPerNoteBendAutoConfigEnabled() const noexcept
+{
+    return impl_->mpePerNoteBendAutoConfigEnabled_;
+}
+
+int Synth::getDroppedPolyKpOnMemberCount() const noexcept
+{
+    return impl_->droppedPolyKpOnMember_;
+}
+
+int Synth::getDroppedManagerOnlyMessageCount() const noexcept
+{
+    return impl_->droppedManagerOnlyCCs_;
 }
 
 void Synth::tempo(int delay, float secondsPerBeat) noexcept

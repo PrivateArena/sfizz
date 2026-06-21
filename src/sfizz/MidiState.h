@@ -100,11 +100,27 @@ public:
     void pitchBendEvent(int delay, float pitchBendValue) noexcept;
 
     /**
+     * @brief Register a pitch bend event on a specific MIDI channel.
+     * Out-of-range channels are silently ignored. The single-arg
+     * overload forwards to this with channel = masterChannel.
+     */
+    void pitchBendEvent(int delay, int channel, float pitchBendValue) noexcept;
+
+    /**
      * @brief Get the pitch bend status
 
      * @return int
      */
     float getPitchBend() const noexcept;
+
+    /**
+     * @brief Get the pitch bend status for a specific MIDI channel.
+     * Out-of-range channels return 0.0f. Used by per-voice consumers
+     * (Voice etc.) to read modulation events scoped to the voice's
+     * originating channel; master-channel reads via the no-arg overload
+     * are unchanged.
+     */
+    float getPitchBend(int channel) const noexcept;
 
     /**
      * @brief Register a channel aftertouch event
@@ -114,11 +130,23 @@ public:
     void channelAftertouchEvent(int delay, float aftertouch) noexcept;
 
     /**
+     * @brief Register a channel aftertouch event on a specific MIDI
+     * channel. Out-of-range channels are silently ignored.
+     */
+    void channelAftertouchEvent(int delay, int channel, float aftertouch) noexcept;
+
+    /**
      * @brief Register a channel aftertouch event
      *
      * @param aftertouch
      */
     void polyAftertouchEvent(int delay, int noteNumber, float aftertouch) noexcept;
+
+    /**
+     * @brief Register a polyphonic aftertouch event on a specific MIDI
+     * channel. Out-of-range channels or notes are silently ignored.
+     */
+    void polyAftertouchEvent(int delay, int channel, int noteNumber, float aftertouch) noexcept;
 
     /**
      * @brief Get the channel aftertouch status
@@ -128,11 +156,23 @@ public:
     float getChannelAftertouch() const noexcept;
 
     /**
+     * @brief Get the channel aftertouch status for a specific MIDI
+     * channel. Out-of-range channels return 0.0f.
+     */
+    float getChannelAftertouch(int channel) const noexcept;
+
+    /**
      * @brief Get the polyphonic aftertouch status
 
      * @return int
      */
     float getPolyAftertouch(int noteNumber) const noexcept;
+
+    /**
+     * @brief Get the polyphonic aftertouch status for a specific MIDI
+     * channel and note. Out-of-range channels or notes return 0.0f.
+     */
+    float getPolyAftertouch(int channel, int noteNumber) const noexcept;
 
     /**
      * @brief Get the current midi program
@@ -155,6 +195,12 @@ public:
      * @param ccValue
      */
     void ccEvent(int delay, int ccNumber, float ccValue) noexcept;
+
+    /**
+     * @brief Register a CC event on a specific MIDI channel.
+     * Out-of-range channels are silently ignored.
+     */
+    void ccEvent(int delay, int channel, int ccNumber, float ccValue) noexcept;
 
     /**
      * @brief Advances the internal clock of a given amount of samples.
@@ -195,6 +241,12 @@ public:
     float getCCValue(int ccNumber) const noexcept;
 
     /**
+     * @brief Get the last CC value for CC number on a specific MIDI
+     * channel. Out-of-range channels return 0.0f.
+     */
+    float getCCValue(int channel, int ccNumber) const noexcept;
+
+    /**
      * @brief Get the CC value for CC number
      *
      * @param ccNumber
@@ -204,20 +256,62 @@ public:
     float getCCValueAt(int ccNumber, int delay) const noexcept;
 
     /**
+     * @brief Get the CC value for CC number on a specific MIDI channel
+     * at a given delay. Out-of-range channels return 0.0f.
+     */
+    float getCCValueAt(int channel, int ccNumber, int delay) const noexcept;
+
+    /**
      * @brief Reset the midi note states
      *
      */
     void resetNoteStates() noexcept;
 
     const EventVector& getCCEvents(int ccIdx) const noexcept;
+    const EventVector& getCCEvents(int channel, int ccIdx) const noexcept;
     const EventVector& getPolyAftertouchEvents(int noteNumber) const noexcept;
+    const EventVector& getPolyAftertouchEvents(int channel, int noteNumber) const noexcept;
     const EventVector& getPitchEvents() const noexcept;
+    const EventVector& getPitchEvents(int channel) const noexcept;
+    /**
+     * @brief Return the pitch-bend events for the given channel, with no
+     *        master fallback. The vector may be empty if that channel has
+     *        never received its own bend events. Use this when combining
+     *        member and master bend contributions separately for MPE.
+     */
+    const EventVector& getPitchEventsRaw(int channel) const noexcept;
+
+    /**
+     * @brief Return the latest pitch bend value for the given channel, with
+     *        no master fallback. Returns 0 if the channel has never received
+     *        its own bend. Pair with getMPEBendRangeForChannel to compute a
+     *        per-channel bend contribution.
+     */
+    float getPitchBendRaw(int channel) const noexcept;
     const EventVector& getChannelAftertouchEvents() const noexcept;
+    const EventVector& getChannelAftertouchEvents(int channel) const noexcept;
     /**
      * @brief Reset the midi event states (CC, AT, and pitch bend)
      *
      */
     void resetEventStates() noexcept;
+
+    /**
+     * @brief Configure the MPE pitch bend ranges used when computing the
+     *        bend amount applied to a voice. Master and member channels
+     *        carry independent ranges per MPE 1.0; SFZ regions only have
+     *        a single bend_up / bend_down pair, so member channels can't
+     *        rely on the region opcodes and need this synth-level setting.
+     */
+    void setMPEPitchBendRange(float masterSemitones, float perNoteSemitones) noexcept;
+
+    /**
+     * @brief Return the bend range (in semitones) the given channel should
+     *        use to scale a normalized [-1, +1] pitch bend value. Master
+     *        channel returns the master range, member channels return the
+     *        per-note range.
+     */
+    float getMPEBendRangeForChannel(int channel) const noexcept;
 
 private:
 
@@ -269,31 +363,40 @@ private:
     int lastNotePlayed { -1 };
 
     /**
-     * @brief Current known values for the CCs.
-     *
+     * @brief Per-channel event state. Holds the pitch/CC/aftertouch event
+     * vectors for one MIDI channel. Introduced so MPE-aware callers can
+     * route events to a specific member channel without colliding with
+     * other channels' modulation. M1 wires only the master channel; M3
+     * will add channel-aware public API methods that target channels
+     * 1..15. Until then, all events resolve to channelStates[masterChannel]
+     * and behavior is byte-for-byte identical to the pre-refactor code.
      */
-    std::array<EventVector, config::numCCs> ccEvents;
+    struct ChannelState {
+        std::array<EventVector, config::numCCs> ccEvents;
+        std::array<EventVector, 128> polyAftertouchEvents;
+        EventVector pitchEvents;
+        EventVector channelAftertouchEvents;
+    };
+
+    /**
+     * @brief Per-channel pitch/CC/aftertouch state. Indexed 0..15 to match
+     * MIDI channels 1..16 (0-indexed). The master channel for non-MPE
+     * input is index 0; MPE member channels occupy 1..15 (or 0..14 with
+     * channel 16 as master, depending on zone configuration — currently
+     * fixed at master=0 pending M3).
+     */
+    static constexpr int masterChannel = 0;
+    std::array<ChannelState, 16> channelStates;
+
+    // MPE 1.0 defaults: master = 2 st, per-note = 48 st.
+    float mpeMasterPitchBendRange_ { 2.0f };
+    float mpePerNotePitchBendRange_ { 48.0f };
 
     /**
      * @brief Null event
      *
      */
     const EventVector nullEvent { { 0, 0.0f } };
-
-    /**
-     * @brief Pitch bend status
-     */
-    EventVector pitchEvents;
-
-    /**
-     * @brief Aftertouch status
-     */
-    EventVector channelAftertouchEvents;
-
-    /**
-     * @brief Polyphonic aftertouch status.
-     */
-    std::array<EventVector, 128> polyAftertouchEvents;
 
     /**
      * @brief Current midi program
