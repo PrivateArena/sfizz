@@ -313,6 +313,9 @@ public:
      */
     float getMPEBendRangeForChannel(int channel) const noexcept;
 
+    void setMPEEnabled(bool enabled) noexcept { mpeEnabled_ = enabled; }
+    bool getMPEEnabled() const noexcept { return mpeEnabled_; }
+
 private:
 
     /**
@@ -322,7 +325,7 @@ private:
      * @param delay
      * @param value
      */
-    void insertEventInVector(EventVector& events, int delay, float value);
+    void insertEventInVector(EventVector& events, int delay, float value, float sentinelValue = 0.0f);
 
     int activeNotes { 0 };
 
@@ -391,6 +394,7 @@ private:
     // MPE 1.0 defaults: master = 2 st, per-note = 48 st.
     float mpeMasterPitchBendRange_ { 2.0f };
     float mpePerNotePitchBendRange_ { 48.0f };
+    bool mpeEnabled_ { false };
 
     /**
      * @brief Null event

@@ -78,7 +78,7 @@ public:
      * @return true if the region should trigger on this event.
      * @return false
      */
-    bool registerNoteOff(int noteNumber, float velocity, float randValue) noexcept;
+    bool registerNoteOff(int noteNumber, float velocity, float randValue, int channel = 0) noexcept;
     /**
      * @brief Update the internal state of the layer with respect to CC events (sustain, CC
      *  switch, etc).
@@ -129,10 +129,19 @@ public:
     // Started notes
     bool sustainPressed_ { false };
     bool sostenutoPressed_ { false };
-    std::vector<std::pair<int, float>> delayedSustainReleases_;
-    std::vector<std::pair<int, float>> delayedSostenutoReleases_;
-    void delaySustainRelease(int noteNumber, float velocity) noexcept;
-    void delaySostenutoRelease(int noteNumber, float velocity) noexcept;
+    struct DelayedRelease {
+        int noteNumber;
+        float velocity;
+        int channel;
+
+        bool operator==(const DelayedRelease& other) const noexcept {
+            return noteNumber == other.noteNumber && velocity == other.velocity && channel == other.channel;
+        }
+    };
+    std::vector<DelayedRelease> delayedSustainReleases_;
+    std::vector<DelayedRelease> delayedSostenutoReleases_;
+    void delaySustainRelease(int noteNumber, float velocity, int channel = 0) noexcept;
+    void delaySostenutoRelease(int noteNumber, float velocity, int channel = 0) noexcept;
     void storeSostenutoNotes() noexcept;
     void removeFromSostenutoReleases(int noteNumber) noexcept;
     bool isNoteSustained(int noteNumber) const noexcept;

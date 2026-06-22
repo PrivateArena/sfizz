@@ -1405,7 +1405,7 @@ void Synth::Impl::noteOffDispatch(int delay, int channel, int noteNumber, float 
 
     for (Layer* layer : noteActivationLists_[noteNumber]) {
         const Region& region = layer->getRegion();
-        if (layer->registerNoteOff(noteNumber, velocity, randValue)) {
+        if (layer->registerNoteOff(noteNumber, velocity, randValue, channel)) {
             if (region.trigger == Trigger::release && !region.rtDead && !voiceManager_.playingAttackVoice(&region))
                 continue;
 
@@ -1466,7 +1466,7 @@ void Synth::Impl::startDelayedSustainReleases(Layer* layer, int delay, SisterVoi
     }
 
     for (auto& note: layer->delayedSustainReleases_) {
-        const TriggerEvent noteOffEvent { TriggerEventType::NoteOff, note.first, note.second };
+        const TriggerEvent noteOffEvent { TriggerEventType::NoteOff, note.noteNumber, note.velocity, note.channel };
         startVoice(layer, delay, noteOffEvent, ring);
     }
 
@@ -1483,7 +1483,7 @@ void Synth::Impl::startDelayedSostenutoReleases(Layer* layer, int delay, SisterV
     }
 
     for (auto& note: layer->delayedSostenutoReleases_) {
-        const TriggerEvent noteOffEvent { TriggerEventType::NoteOff, note.first, note.second };
+        const TriggerEvent noteOffEvent { TriggerEventType::NoteOff, note.noteNumber, note.velocity, note.channel };
         startVoice(layer, delay, noteOffEvent, ring);
     }
     layer->delayedSostenutoReleases_.clear();
@@ -1510,7 +1510,7 @@ void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, 
         if (region.checkSostenuto && ccNumber == region.sostenutoCC && value < region.sostenutoThreshold) {
             if (layer->sustainPressed_) {
                 for (const auto& v: layer->delayedSostenutoReleases_)
-                    layer->delaySustainRelease(v.first, v.second);
+                    layer->delaySustainRelease(v.noteNumber, v.velocity, v.channel);
 
                 layer->delayedSostenutoReleases_.clear();
             } else {
@@ -1851,6 +1851,7 @@ void Synth::setMPEEnabled(bool enabled) noexcept
     Impl& impl = *impl_;
     const bool wasEnabled = impl.mpeEnabled_;
     impl.mpeEnabled_ = enabled;
+    impl.resources_.getMidiState().setMPEEnabled(enabled);
     // On the MPE on→off transition, flush active voices. Voices triggered
     // while MPE was enabled carry triggerChannel_ > 0, and after the flip
     // all subsequent *MPE / legacy calls normalize channel to 0 — so

@@ -157,14 +157,12 @@ static sfz::Voice* stealEnvelopeAndAgeWithChannelPref(
     std::vector<Voice*>& temp, int preferredChannel) noexcept
 {
     if (preferredChannel >= 0) {
-        std::vector<Voice*> sameChannel;
-        sameChannel.reserve(temp.size());
-        for (Voice* v : temp) {
-            if (v != nullptr && v->getTriggerEvent().channel == preferredChannel)
-                sameChannel.push_back(v);
-        }
-        if (!sameChannel.empty())
-            return stealEnvelopeAndAge(absl::MakeSpan(sameChannel));
+        auto it = std::partition(temp.begin(), temp.end(), [preferredChannel](const Voice* v) {
+            return v != nullptr && v->getTriggerEvent().channel == preferredChannel;
+        });
+        size_t numSameChannel = std::distance(temp.begin(), it);
+        if (numSameChannel > 0)
+            return stealEnvelopeAndAge(absl::MakeSpan(temp.data(), numSameChannel));
     }
     return stealEnvelopeAndAge(absl::MakeSpan(temp));
 }

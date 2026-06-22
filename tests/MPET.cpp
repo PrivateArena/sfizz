@@ -23,6 +23,27 @@
 using namespace Catch::literals;
 using namespace sfz::literals;
 
+#include <atomic>
+#include <chrono>
+
+static std::atomic<size_t> g_alloc_count{0};
+static std::atomic<bool> g_track_allocs{false};
+
+void* operator new(size_t size) {
+    if (g_track_allocs) {
+        g_alloc_count.fetch_add(1, std::memory_order_relaxed);
+    }
+    return malloc(size);
+}
+
+void operator delete(void* p) noexcept {
+    free(p);
+}
+
+void operator delete(void* p, size_t) noexcept {
+    free(p);
+}
+
 // =============================================================================
 // MidiState: per-channel writes/reads in isolation
 // =============================================================================
@@ -936,4 +957,103 @@ TEST_CASE("[MPE] Active voice on Member Channel still responds to per-finger exp
     REQUIRE(mid.getChannelAftertouch(2) == 80_norm);
     REQUIRE(mid.getCCValue(2, 74) == 70_norm);
     REQUIRE(active[0]->expressionChannel() == 2);
+}
+
+TEST_CASE("[MPE] Sustain pedal release voice propagates the correct member channel")
+{
+    sfz::Synth synth;
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+    synth.setMPEEnabled(true);
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_sustain.sfz", R"(
+        <region> trigger=attack sample=*sine
+        <region> trigger=release sample=*sine ampeg_release=1
+    )");
+
+    // Press sustain pedal (CC 64) on Manager Channel (0)
+    synth.cc(0, /*channel=*/0, /*ccNumber=*/64, 127);
+    synth.renderBlock(buffer);
+
+    // NoteOn on member channel 3
+    synth.noteOn(0, /*channel=*/3, /*note=*/60, 100);
+    synth.renderBlock(buffer);
+
+    // NoteOff on member channel 3
+    synth.noteOff(0, /*channel=*/3, /*note=*/60, 0);
+    synth.renderBlock(buffer);
+
+    // The note off is delayed because sustain pedal is down. No release voice triggered yet.
+    REQUIRE(synth.getActiveVoices().size() == 1);
+
+    // Release sustain pedal (CC 64) on Manager Channel (0)
+    synth.cc(0, /*channel=*/0, /*ccNumber=*/64, 0);
+    synth.renderBlock(buffer);
+
+    // The release voice should be triggered now!
+    auto active = synth.getActiveVoices();
+    REQUIRE(active.size() >= 2);
+    bool foundReleaseVoiceOnCh3 = false;
+    for (const sfz::Voice* v : active) {
+        if (v->getTriggerEvent().type == sfz::TriggerEventType::NoteOff && v->getTriggerEvent().channel == 3) {
+            foundReleaseVoiceOnCh3 = true;
+        }
+    }
+    REQUIRE(foundReleaseVoiceOnCh3);
+}
+
+TEST_CASE("[MPE][benchmark] MPE performance and allocation benchmark", "[.benchmark]")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    synth.setNumVoices(64);
+    synth.setSamplesPerBlock(256);
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_sustain.sfz", R"(
+        <region> trigger=attack sample=*sine
+        <region> trigger=release sample=*sine ampeg_release=1
+    )");
+
+    sfz::AudioBuffer<float> buffer(2, 256);
+    
+    // Pre-warm the engine
+    for (int ch = 0; ch < 16; ++ch) {
+        synth.noteOn(0, ch, 60 + ch, 100);
+        synth.pitchWheel(0, ch, 100);
+        synth.cc(0, ch, 74, 100);
+    }
+    synth.renderBlock(buffer);
+    
+    for (int ch = 0; ch < 16; ++ch) {
+        synth.noteOff(0, ch, 60 + ch, 0);
+    }
+    synth.renderBlock(buffer);
+
+    g_alloc_count = 0;
+    g_track_allocs = true;
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Render 100 blocks under heavy MPE CC & Pitch Wheel modulations
+    for (int i = 0; i < 100; ++i) {
+        int delay = (i % 256);
+        for (int ch = 0; ch < 16; ++ch) {
+            if (i % 10 == 0) {
+                synth.noteOn(delay, ch, 60 + ch, 100);
+            } else if (i % 10 == 5) {
+                synth.noteOff(delay, ch, 60 + ch, 0);
+            }
+            
+            synth.pitchWheel(delay, ch, -4000 + (i % 8000));
+            synth.cc(delay, ch, 1 + (i % 100), i % 128);
+            synth.channelAftertouch(delay, ch, i % 128);
+        }
+        synth.renderBlock(buffer);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    g_track_allocs = false;
+
+    std::chrono::duration<double, std::milli> duration = end - start;
+    std::cout << "\n========================================\n"
+              << "[BENCHMARK RESULT] Execution time: " << duration.count() << " ms\n"
+              << "[BENCHMARK RESULT] Audio thread allocations: " << g_alloc_count.load() << "\n"
+              << "========================================\n" << std::endl;
 }

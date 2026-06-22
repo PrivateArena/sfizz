@@ -96,18 +96,29 @@ void sfz::MidiState::flushEvents() noexcept
     };
 
     // Master always carries its initialised sentinel event vectors, so its
-    // flush is unconditional. Member channels are populated lazily on
-    // first write, so most of their event vectors stay empty under
-    // non-MPE input — flushEventVector skips empties cheaply.
-    for (auto& cs : channelStates) {
-        for (auto& events : cs.ccEvents)
-            flushEventVector(events);
+    // flush is unconditional.
+    auto& masterCs = channelStates[masterChannel];
+    for (auto& events : masterCs.ccEvents)
+        flushEventVector(events);
+    for (auto& events : masterCs.polyAftertouchEvents)
+        flushEventVector(events);
+    flushEventVector(masterCs.pitchEvents);
+    flushEventVector(masterCs.channelAftertouchEvents);
 
-        for (auto& events : cs.polyAftertouchEvents)
-            flushEventVector(events);
+    // Member channels are populated lazily on first write, and are only
+    // flushed if MPE is enabled to avoid looping over empty vectors.
+    if (mpeEnabled_) {
+        for (int ch = 1; ch < 16; ++ch) {
+            auto& cs = channelStates[ch];
+            for (auto& events : cs.ccEvents)
+                flushEventVector(events);
 
-        flushEventVector(cs.pitchEvents);
-        flushEventVector(cs.channelAftertouchEvents);
+            for (auto& events : cs.polyAftertouchEvents)
+                flushEventVector(events);
+
+            flushEventVector(cs.pitchEvents);
+            flushEventVector(cs.channelAftertouchEvents);
+        }
     }
 }
 
@@ -119,17 +130,17 @@ void sfz::MidiState::setSamplesPerBlock(int samplesPerBlock) noexcept
         events.reserve(samplesPerBlock);
     };
     this->samplesPerBlock = samplesPerBlock;
-    // M1: only master channel reserves buffer space; M3 will reserve
-    // for any active member channel as well.
-    auto& cs = channelStates[masterChannel];
-    for (auto& events: cs.ccEvents)
-        updateEventBufferSize(events);
+    // Reserve buffer space for all channels to prevent audio-thread allocations when MPE is active
+    for (auto& cs : channelStates) {
+        for (auto& events: cs.ccEvents)
+            updateEventBufferSize(events);
 
-    for (auto& events: cs.polyAftertouchEvents)
-        updateEventBufferSize(events);
+        for (auto& events: cs.polyAftertouchEvents)
+            updateEventBufferSize(events);
 
-    updateEventBufferSize(cs.pitchEvents);
-    updateEventBufferSize(cs.channelAftertouchEvents);
+        updateEventBufferSize(cs.pitchEvents);
+        updateEventBufferSize(cs.channelAftertouchEvents);
+    }
 }
 
 float sfz::MidiState::getNoteDuration(int noteNumber, int delay) const
@@ -159,16 +170,16 @@ float sfz::MidiState::getVelocityOverride() const noexcept
     return velocityOverride;
 }
 
-void sfz::MidiState::insertEventInVector(EventVector& events, int delay, float value)
+void sfz::MidiState::insertEventInVector(EventVector& events, int delay, float value, float sentinelValue)
 {
     // Member channels are populated lazily — their vectors start empty and
     // only grow on first write. linearEnvelope downstream ASSERTs the
-    // vector starts at delay 0, so seed the centre-value sentinel before
+    // vector starts at delay 0, so seed the sentinel before
     // inserting if this is the first ever event on this channel/CC slot.
     // Master channels are pre-seeded at construction so this is a no-op
     // for them.
     if (events.empty())
-        events.push_back({ 0, 0.0f });
+        events.push_back({ 0, sentinelValue });
 
     const auto insertionPoint = absl::c_lower_bound(events, delay, MidiEventDelayComparator {});
     if (insertionPoint == events.end() || insertionPoint->delay != delay)
@@ -288,7 +299,7 @@ void sfz::MidiState::ccEvent(int delay, int channel, int ccNumber, float ccValue
         return;
     if (ccNumber < 0 || ccNumber >= config::numCCs)
         return;
-    insertEventInVector(channelStates[channel].ccEvents[ccNumber], delay, ccValue);
+    insertEventInVector(channelStates[channel].ccEvents[ccNumber], delay, ccValue, getCCValue(masterChannel, ccNumber));
 }
 
 float sfz::MidiState::getCCValue(int ccNumber) const noexcept
