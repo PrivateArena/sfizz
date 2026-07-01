@@ -106,8 +106,8 @@ void sfz::MidiState::flushEvents() noexcept
     flushEventVector(masterCs.channelAftertouchEvents);
 
     // Member channels are populated lazily on first write, and are only
-    // flushed if MPE is enabled to avoid looping over empty vectors.
-    if (mpeEnabled_) {
+    // flushed if MPE is enabled or channel restrictions are active to avoid looping over empty vectors.
+    if (mpeEnabled_ || hasChannelRestrictions_) {
         for (int ch = 1; ch < 16; ++ch) {
             auto& cs = channelStates[ch];
             for (auto& events : cs.ccEvents)
@@ -212,7 +212,7 @@ float sfz::MidiState::getPitchBend(int channel) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].pitchEvents;
     if (events.empty()) {
-        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+        if (channel != masterChannel)
             return getPitchBend(masterChannel);
         return 0.0f;
     }
@@ -260,7 +260,7 @@ float sfz::MidiState::getChannelAftertouch(int channel) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].channelAftertouchEvents;
     if (events.empty()) {
-        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+        if (channel != masterChannel)
             return getChannelAftertouch(masterChannel);
         return 0.0f;
     }
@@ -281,7 +281,7 @@ float sfz::MidiState::getPolyAftertouch(int channel, int noteNumber) const noexc
 
     const auto& events = channelStates[channel].polyAftertouchEvents[noteNumber];
     if (events.empty()) {
-        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+        if (channel != masterChannel)
             return getPolyAftertouch(masterChannel, noteNumber);
         return 0.0f;
     }
@@ -314,7 +314,7 @@ float sfz::MidiState::getCCValue(int channel, int ccNumber) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].ccEvents[ccNumber];
     if (events.empty()) {
-        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+        if (channel != masterChannel)
             return getCCValue(masterChannel, ccNumber);
         return 0.0f;
     }
@@ -333,7 +333,7 @@ float sfz::MidiState::getCCValueAt(int channel, int ccNumber, int delay) const n
         return 0.0f;
     const auto& events = channelStates[channel].ccEvents[ccNumber];
     if (events.empty()) {
-        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+        if (channel != masterChannel)
             return getCCValueAt(masterChannel, ccNumber, delay);
         return 0.0f;
     }
@@ -442,6 +442,15 @@ const sfz::EventVector& sfz::MidiState::getCCEvents(int channel, int ccIdx) cons
         return nullEvent;
     }
     return events;
+}
+
+bool sfz::MidiState::hasCCEvents(int channel, int ccIdx) const noexcept
+{
+    if (ccIdx < 0 || ccIdx >= config::numCCs)
+        return false;
+    if (channel < 0 || channel >= static_cast<int>(channelStates.size()))
+        return false;
+    return !channelStates[channel].ccEvents[ccIdx].empty();
 }
 
 const sfz::EventVector& sfz::MidiState::getPitchEvents() const noexcept

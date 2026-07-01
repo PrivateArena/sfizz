@@ -133,7 +133,9 @@ bool Layer::registerNoteOff(int noteNumber, float velocity, float randValue, int
 
 void Layer::updateCCState(int channel, int ccNumber, float ccValue) noexcept
 {
-    UNUSED(channel);
+    if (!region_.channelRange.containsWithEnd(channel + 1))
+        return;
+
     const Region& region = region_;
 
     if (ccNumber == region.sustainCC)
@@ -186,8 +188,9 @@ bool Layer::registerCC(int channel, int ccNumber, float ccValue, float randValue
             ((sequenceCounter_++ % region.sequenceLength) == region.sequencePosition - 1);
 
         float prevValue = midiState_.getCCValue(channel, ccNumber);
+        bool hasValueOnChannel = midiState_.hasCCEvents(channel, ccNumber);
 
-        if (isSwitchedOn() && (ccNumber == ExtendedCCs::polyphonicAftertouch || ccValue != prevValue))
+        if (isSwitchedOn() && (ccNumber == ExtendedCCs::polyphonicAftertouch || !hasValueOnChannel || ccValue != prevValue))
             return true;
     }
 

@@ -269,6 +269,7 @@ public:
 
     const EventVector& getCCEvents(int ccIdx) const noexcept;
     const EventVector& getCCEvents(int channel, int ccIdx) const noexcept;
+    bool hasCCEvents(int channel, int ccIdx) const noexcept;
     const EventVector& getPolyAftertouchEvents(int noteNumber) const noexcept;
     const EventVector& getPolyAftertouchEvents(int channel, int noteNumber) const noexcept;
     const EventVector& getPitchEvents() const noexcept;

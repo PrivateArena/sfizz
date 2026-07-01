@@ -526,7 +526,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
     impl.resetCrossfades();
 
     for (unsigned i = 0; i < region.filters.size(); ++i) {
-        impl.filters_[i].setup(region, i, impl.triggerEvent_.number, impl.triggerEvent_.value);
+        impl.filters_[i].setup(region, i, impl.triggerEvent_.number, impl.triggerEvent_.value, impl.triggerChannel_);
     }
 
     for (unsigned i = 0; i < region.equalizers.size(); ++i) {
@@ -687,7 +687,7 @@ void Voice::registerNoteOff(int delay, int channel, int noteNumber, float veloci
     }
 }
 
-void Voice::registerCC(int delay, int ccNumber, float ccValue) noexcept
+void Voice::registerCC(int delay, int channel, int ccNumber, float ccValue) noexcept
 {
     Impl& impl = *impl_;
     if (impl.region_ == nullptr)
@@ -696,6 +696,10 @@ void Voice::registerCC(int delay, int ccNumber, float ccValue) noexcept
     const Region& region = *impl.region_;
 
     if (impl.state_ != State::playing)
+        return;
+
+    int voiceChannel = impl.triggerChannel_;
+    if (channel != 0 && channel != voiceChannel)
         return;
 
     if (ccNumber != region.sustainCC && ccNumber != region.sostenutoCC)

@@ -882,9 +882,10 @@ void Synth::Impl::finalizeSfzLoad()
 
         // Defaults
         MidiState& midiState = resources_.getMidiState();
-        const int initChannel = region.channelRange.getStart() - 1;
-        for (int cc = 0; cc < config::numCCs; cc++) {
-            layer.updateCCState(initChannel, cc, midiState.getCCValue(initChannel, cc));
+        for (int ch = region.channelRange.getStart() - 1; ch <= region.channelRange.getEnd() - 1; ++ch) {
+            for (int cc = 0; cc < config::numCCs; cc++) {
+                layer.updateCCState(ch, cc, midiState.getCCValue(ch, cc));
+            }
         }
 
 
@@ -1636,7 +1637,7 @@ void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normVa
         channel = 0;
 
     for (auto& voice : voiceManager_)
-        voice.registerCC(delay, ccNumber, normValue);
+        voice.registerCC(delay, channel, ccNumber, normValue);
 
     ccDispatch(delay, channel, ccNumber, normValue, extendedArg);
     midiState.ccEvent(delay, channel, ccNumber, normValue);
@@ -2475,14 +2476,16 @@ void Synth::Impl::resetAllControllers(int delay) noexcept
     for (auto& voice : voiceManager_) {
         voice.registerPitchWheel(delay, 0);
         for (int cc = 0; cc < config::numCCs; ++cc)
-            voice.registerCC(delay, cc, defaultCCValues_[cc]);
+            voice.registerCC(delay, 0, cc, defaultCCValues_[cc]);
     }
 
     for (const LayerPtr& layerPtr : layers_) {
         Layer& layer = *layerPtr;
-        const int initChannel = layer.getRegion().channelRange.getStart() - 1;
-        for (int cc = 0; cc < config::numCCs; ++cc)
-            layer.updateCCState(initChannel, cc, defaultCCValues_[cc]);
+        const Region& region = layer.getRegion();
+        for (int ch = region.channelRange.getStart() - 1; ch <= region.channelRange.getEnd() - 1; ++ch) {
+            for (int cc = 0; cc < config::numCCs; ++cc)
+                layer.updateCCState(ch, cc, defaultCCValues_[cc]);
+        }
     }
 }
 

@@ -22,11 +22,10 @@ We refactored `sfz::Synth` and `sfz::MidiState` to decouple multi-channel MIDI r
    ```
 
 3. **Fallback Gating in `MidiState`**:
-   To prevent cross-channel leakage in multi-timbral setups, we updated the `MidiState` query functions (`getCCValue`, `getPitchBend`, etc.). If `hasChannelRestrictions_` is active and MPE is disabled, the fallback to channel `0` is bypassed, keeping each MIDI channel's controller state completely isolated:
-   ```cpp
-   if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
-       return getCCValue(masterChannel, ccNumber);
-   ```
+   To ensure smooth integration and prevent silent zero-value failures when a MIDI channel has no prior controller history, we implemented a "fallback-before-first-event" design. 
+   When querying controller values (e.g. `getCCValue`, `getPitchBend`, `getChannelAftertouch`) on a non-master channel, the engine falls back to `masterChannel` (channel 0) only if the target channel's event vector is completely empty (no events have been received yet on that specific channel). As soon as the first event is received on the target channel, the channel's state becomes isolated and no longer falls back to the master channel.
+   
+   To support triggering regions on the first CC event correctly (even if the first event's value matches the master channel's value), `Layer::registerCC` utilizes `MidiState::hasCCEvents` to detect if the event is the channel's first event and bypasses the `ccValue != prevValue` check accordingly.
 
 ### Conclusion
 `lochan` and `hichan` act as high-performance, general-purpose multi-channel MIDI filters in standard non-MPE mode. MPE is no longer required for multi-timbral routing.

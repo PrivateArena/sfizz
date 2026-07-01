@@ -30,6 +30,7 @@ public:
        The control structure is owned by the caller.
      */
     void configure(const FlexEGDescription* desc);
+    void setChannel(int channel) noexcept;
 
     /**
      * @brief Set the EG to be freeRunning or not

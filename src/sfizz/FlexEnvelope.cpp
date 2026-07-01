@@ -37,6 +37,7 @@ struct FlexEnvelope::Impl {
     const FlexEGDescription* desc_ { nullptr };
     float samplePeriod_ { 1.0 / config::defaultSampleRate };
     size_t delayFramesLeft_ { 0 };
+    int channel_ { 0 };
 
     //
     float stageSourceLevel_ { 0.0 };
@@ -90,6 +91,12 @@ void FlexEnvelope::configure(const FlexEGDescription* desc)
     impl.currentStageNumber_ = 0;
     impl.currentLevel_ = 0.0;
     impl.currentTime_ = 0.0;
+}
+
+void FlexEnvelope::setChannel(int channel) noexcept
+{
+    Impl& impl = *impl_;
+    impl.channel_ = channel;
 }
 
 void FlexEnvelope::start(unsigned triggerDelay)
@@ -288,8 +295,8 @@ void FlexEnvelope::Impl::updateCurrentTimeAndLevel(int delay)
 
     const FlexEGPoint& point = desc.points[currentStageNumber_];
     const MidiState& midiState = resources_->getMidiState();
-    stageTargetLevel_ = point.getLevel(midiState, delay);
-    stageTime_ = point.getTime(midiState, delay);
+    stageTargetLevel_ = point.getLevel(midiState, channel_, delay);
+    stageTime_ = point.getTime(midiState, channel_, delay);
 }
 
 } // namespace sfz

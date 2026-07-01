@@ -152,7 +152,7 @@ public:
      * @param ccNumber
      * @param ccValue
      */
-    void registerCC(int delay, int ccNumber, float ccValue) noexcept;
+    void registerCC(int delay, int channel, int ccNumber, float ccValue) noexcept;
     /**
      * @brief Register a pitch wheel event; for now this does nothing
      *

@@ -31,7 +31,7 @@ public:
      * @param delay
      * @param velocity
      */
-    void reset(const EGDescription& desc, const Region& region, int delay, float velocity, float sampleRate) noexcept;
+    void reset(const EGDescription& desc, const Region& region, int delay, float velocity, float sampleRate, int channel = 0) noexcept;
     /**
      * @brief Get the next block of values for the envelope.
      *
@@ -108,6 +108,7 @@ private:
     CurveSet& curveSet_;
     float triggerVelocity_ { 0.0f };
     bool dynamic_ { false };
+    int channel_ { 0 };
     int delay { 0 };
     Float attackStep { 0 };
     Float decayRate { 0 };
