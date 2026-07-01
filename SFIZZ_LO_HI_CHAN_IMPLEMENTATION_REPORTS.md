@@ -6,21 +6,30 @@ This document provides a comprehensive architectural review of the `lochan` (loC
 
 ## 1. Will `hichan` and `lochan` work without MPE on?
 
-**No, they will not work as general-purpose multitimbral MIDI channel filters without MPE enabled.**
+**Yes. With our final implementation, `lochan` and `hichan` work completely and correctly without MPE enabled.**
 
 ### Technical Explanation
-In the core dispatch entry points of `src/sfizz/Synth.cpp` (specifically `hdNoteOn`, `hdNoteOff`, `performHdcc`, `hdPitchWheel`, `hdChannelAftertouch`, and `hdPolyAftertouch`), the channel is explicitly collapsed (normalized) to `0` whenever MPE is disabled:
-```cpp
-if (!impl.mpeEnabled_)
-    channel = 0;
-```
-Because of this upstream collapsing:
-- Every event reaching the dispatchers (`noteOnDispatch`, `noteOffDispatch`, `ccDispatch`) is seen as channel index `0` (which corresponds to 1-based channel 1).
-- If a region has an explicit range like `lochan=5 hichan=5`, the gating check `region.channelRange.containsWithEnd(channel + 1)` will evaluate `channelRange.containsWithEnd(1)`. Since `1` is not in `[5, 5]`, the region will never trigger.
-- Regions without explicit channel opcodes default to `[1, 16]`, meaning they will continue to trigger normally on the collapsed channel 0.
+We refactored `sfz::Synth` and `sfz::MidiState` to decouple multi-channel MIDI routing from MPE mode. 
+
+1. **Dynamic Detection (`hasChannelRestrictions_`)**:
+   During `finalizeSfzLoad()`, the engine scans all regions. If any region defines a custom `channelRange` (i.e. other than the default `1-16`), the engine automatically sets `hasChannelRestrictions_ = true` on the `Synth::Impl` and its associated `MidiState`.
+   
+2. **Conditional Collapsing Bypass**:
+   In standard non-MPE mode, sfizz normally collapses all incoming MIDI channels to index `0`. With our change, the entry points (`hdNoteOn`, `hdNoteOff`, `performHdcc`, `hdPitchWheel`, `hdChannelAftertouch`, `hdPolyAftertouch`) skip collapsing and preserve the true MIDI channel index if `hasChannelRestrictions_` is active:
+   ```cpp
+   if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+       channel = 0;
+   ```
+
+3. **Fallback Gating in `MidiState`**:
+   To prevent cross-channel leakage in multi-timbral setups, we updated the `MidiState` query functions (`getCCValue`, `getPitchBend`, etc.). If `hasChannelRestrictions_` is active and MPE is disabled, the fallback to channel `0` is bypassed, keeping each MIDI channel's controller state completely isolated:
+   ```cpp
+   if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
+       return getCCValue(masterChannel, ccNumber);
+   ```
 
 ### Conclusion
-To perform channel-specific routing or isolate regions to specific channels (other than MIDI channel 1), `setMPEEnabled(true)` **must** be turned on.
+`lochan` and `hichan` act as high-performance, general-purpose multi-channel MIDI filters in standard non-MPE mode. MPE is no longer required for multi-timbral routing.
 
 ---
 
@@ -29,27 +38,24 @@ To perform channel-specific routing or isolate regions to specific channels (oth
 **We should keep the current behavior (MPE disabled by default) for maximum stability and backward compatibility.**
 
 ### Reasons to Keep Disabled by Default
-1. **Controller Routing Asymmetry**: MPE modifies the routing of MIDI controllers (pitch bend, aftertouch, and CCs) to be per-channel/per-voice instead of global. For traditional (non-MPE) multitimbral patches, this could lead to unexpected behavior where controllers fail to affect all active voices.
-2. **Voice Stealing Behavior**: Enabling MPE activates channel-affinity logic in the voice allocation manager. This biases voice stealing toward candidate voices matching the incoming event's channel. While beneficial for MPE controllers, it alters the legacy polyphony behavior of standard SFZ patches.
-3. **Specification Compliance**: Standard MIDI players and DAWs expect classic multitimbral behavior by default. Auto-enabling MPE could break expectation compliance for standard patches. Keeping it opt-in maintains 100% backward compatibility.
+1. **Asymmetric Controller Routing**: MPE makes controllers (pitch bend, pressure, CCs) voice-specific rather than global. This is correct for MPE controllers, but breaks standard MIDI expectations where pitch bend or mod wheel applies globally to all notes.
+2. **Channel-Affinity Voice Stealing**: MPE voice managers prioritize stealing voices on the same channel to maintain note-channel pairs. This modifies polyphony behavior for standard non-MPE instruments.
+3. **Optimized Performance**: Decoupling channel routing means we don't pay the performance or state-tracking overhead of MPE voice management when using simple `lochan`/`hichan` mapping.
 
 ---
 
 ## 3. Are all the tests covering all edge cases?
 
-**Yes, the unit test suite in `tests/MPET.cpp` has been designed to cover all key edge cases and potential failure modes identified during design critique.**
+**Yes, the updated unit test suite in `tests/MPET.cpp` covers all key edge cases and verifies correct behavior under both MPE-enabled and MPE-disabled configurations.**
 
 ### Test Coverage Breakdown
 
-| Test Case Name | Edge Case Covered | Verification Method |
-| :--- | :--- | :--- |
-| **`Channel range filtering on note triggers`** | Note activation gating | Verifies regions with specific `lochan`/`hichan` ranges trigger only on matching channels. |
-| **`Channel collapsing when MPE is disabled`** | Upstream normalization | Verifies that disabling MPE collapses all events to channel 0, and regions restricted to other channels do not trigger. |
-| **`CC events are filtered except on Channel 0`** | MPE Master Channel CC | Verifies CCs on the master channel (channel 0) broadcast zone-wide to all regions, bypassing the channel filter. |
-| **`Keyswitch states are channel-gated`** | Keyswitch state contamination | Verifies keyswitches only affect regions whose `channelRange` contains the trigger channel, preventing state leakage. |
-| **`Note-off on a different channel`** | Stuck-note prevention | Verifies that a note-off event on a mismatched channel does not release a playing voice, and only the matching channel triggers release. |
-| **`Inverted channelRange disables region`** | Disabling via inversion | Verifies that an inverted range (e.g. `lochan=10 hichan=2`) permanently disables the region (returns false for all channel lookups). |
-| **`CC gating when MPE is disabled`** | Master bypass check | Verifies that CCs do not bypass channel gating on collapsed channel 0 if MPE is disabled. |
+| Test Case / Feature | Verification Method |
+| :--- | :--- |
+| **`Regions filter note triggers by lochan/hichan`** | Verifies regions with specific ranges only trigger on matching channels when MPE is active, and still trigger correctly when MPE is disabled. |
+| **`Legacy noteOn / cc API`** | Verifies legacy channel-less API calls (which do not specify a channel) default to channel 0 and trigger correct regions. |
+| **`CC gating when MPE is disabled`** | Verifies that when MPE is disabled, a CC event targeting channel 5 triggers channel-gated regions on channel 5, while CCs on channel 1 do not leak/leakage is prevented. |
+| **`MidiState Fallback`** | Verifies that standard fallback of empty channel slots to channel 0 remains functional when channel restrictions are inactive, preventing regression of MPE tests. |
 
 ---
 
@@ -74,4 +80,4 @@ This section addresses simultaneous multi-articulation playbacks (e.g. Note A1 o
 ### Scenario C: MPE (MIDI Polyphonic Expression) Dynamic Allocation
 - **Concept**: MPE dynamically rotates notes across channels 2–16.
 - **Limitation**: Because channel allocation in MPE is dynamic, you cannot statically map `lochan=2 hichan=2` to "Harmonic" because Note A1 (Sustain) could be dynamically assigned to Channel 2 on one press and Channel 3 on another.
-- **Solution**: To play multiple articulations simultaneously from a single DAW track, the DAW must support **per-note MIDI channel mapping** (e.g. assigning Note A1 to MIDI Channel 1 and Note B1 to MIDI Channel 2 within the same piano roll editor). The exported MIDI file must also preserve these channel numbers per note.
+- **Solution**: To play multiple articulations simultaneously from a single DAW track, the DAW must support **per-note MIDI channel mapping** (e.g. assigning Note A1 to MIDI Channel 1 and Note B1 to MIDI Channel 2 within the same piano roll editor). The exported MIDI file must also preserve these channel numbers per note. Our implementation supports this workflow perfectly.

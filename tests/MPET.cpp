@@ -1121,13 +1121,31 @@ TEST_CASE("[MPE] Regions filter note triggers by lochan/hichan")
     synth.allSoundOff();
     synth.renderBlock(buffer);
     
-    // 3. When MPE is disabled, channel collapsing maps everything to channel 0.
-    // Region A [2, 2] and B [3, 3] should not trigger on collapsed channel 0.
-    // Region C [1, 16] should trigger.
+    // 3. When MPE is disabled, hichan and lochan still work for channel-aware events!
+    // Triggers on channel index 2 (MIDI channel 3) -> should trigger *triangle and *noise.
     synth.setMPEEnabled(false);
     synth.noteOn(0, /*channel=*/2, 60, 100);
     synth.renderBlock(buffer);
     
+    activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 2);
+    foundTriangle = false;
+    foundNoise = false;
+    for (const sfz::Voice* v : activeVoices) {
+        std::string name = v->getRegion()->sampleId->filename();
+        if (name == "*triangle") foundTriangle = true;
+        if (name == "*noise") foundNoise = true;
+    }
+    REQUIRE(foundTriangle);
+    REQUIRE(foundNoise);
+
+    // Clean up
+    synth.allSoundOff();
+    synth.renderBlock(buffer);
+
+    // 4. Legacy non-channel API noteOn always goes to channel 0 -> should only trigger *noise.
+    synth.noteOn(0, 60, 100);
+    synth.renderBlock(buffer);
     activeVoices = synth.getActiveVoices();
     REQUIRE(activeVoices.size() == 1);
     REQUIRE(activeVoices[0]->getRegion()->sampleId->filename() == "*noise");
@@ -1276,9 +1294,15 @@ TEST_CASE("[MPE] CC gating when MPE is disabled behaves correctly")
         <region> sample=*sine lochan=5 hichan=5 on_locc1=64 on_hicc1=127
     )");
 
-    // CC on channel 1 (collapsed to 0) should not trigger Region (range [5, 5])
+    // CC on channel index 0 (channel 1) should not trigger Region (range [5, 5])
     synth.cc(0, /*channel=*/0, 1, 100);
     synth.renderBlock(buffer);
 
     REQUIRE(synth.getNumActiveVoices() == 0);
+
+    // CC on channel index 4 (channel 5) should trigger the region!
+    synth.cc(0, /*channel=*/4, 1, 100);
+    synth.renderBlock(buffer);
+
+    REQUIRE(synth.getNumActiveVoices() == 1);
 }

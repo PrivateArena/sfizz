@@ -131,8 +131,9 @@ bool Layer::registerNoteOff(int noteNumber, float velocity, float randValue, int
     return false;
 }
 
-void Layer::updateCCState(int ccNumber, float ccValue) noexcept
+void Layer::updateCCState(int channel, int ccNumber, float ccValue) noexcept
 {
+    UNUSED(channel);
     const Region& region = region_;
 
     if (ccNumber == region.sustainCC)
@@ -157,11 +158,11 @@ void Layer::updateCCState(int ccNumber, float ccValue) noexcept
     ccSwitched_.set(ccNumber, conditions->containsWithEnd(ccValue));
 }
 
-bool Layer::registerCC(int ccNumber, float ccValue, float randValue, int extendedArg) noexcept
+bool Layer::registerCC(int channel, int ccNumber, float ccValue, float randValue, int extendedArg) noexcept
 {
     const Region& region = region_;
 
-    updateCCState(ccNumber, ccValue);
+    updateCCState(channel, ccNumber, ccValue);
 
     if (!region.triggerOnCC)
         return false;
@@ -184,7 +185,9 @@ bool Layer::registerCC(int ccNumber, float ccValue, float randValue, int extende
         sequenceSwitched_ =
             ((sequenceCounter_++ % region.sequenceLength) == region.sequencePosition - 1);
 
-        if (isSwitchedOn() && (ccNumber == ExtendedCCs::polyphonicAftertouch || ccValue != midiState_.getCCValue(ccNumber)))
+        float prevValue = midiState_.getCCValue(channel, ccNumber);
+
+        if (isSwitchedOn() && (ccNumber == ExtendedCCs::polyphonicAftertouch || ccValue != prevValue))
             return true;
     }
 

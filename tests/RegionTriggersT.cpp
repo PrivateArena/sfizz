@@ -27,7 +27,7 @@ TEST_CASE("Basic triggers", "Region triggers")
         REQUIRE(layer.registerNoteOn(40, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOff(40, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOn(41, 64_norm, 0.5f));
-        REQUIRE(!layer.registerCC(63, 64_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 63, 64_norm, 0.0f));
     }
     SECTION("lokey and hikey")
     {
@@ -42,7 +42,7 @@ TEST_CASE("Basic triggers", "Region triggers")
         REQUIRE(!layer.registerNoteOn(43, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOff(42, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOff(42, 64_norm, 0.5f));
-        REQUIRE(!layer.registerCC(63, 64_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 63, 64_norm, 0.0f));
     }
     SECTION("key and release trigger")
     {
@@ -53,7 +53,7 @@ TEST_CASE("Basic triggers", "Region triggers")
         REQUIRE(layer.registerNoteOff(40, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOn(41, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOff(41, 64_norm, 0.5f));
-        REQUIRE(!layer.registerCC(63, 64_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 63, 64_norm, 0.0f));
     }
     SECTION("key and release_key trigger")
     {
@@ -64,7 +64,7 @@ TEST_CASE("Basic triggers", "Region triggers")
         REQUIRE(layer.registerNoteOff(40, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOn(41, 64_norm, 0.5f));
         REQUIRE(!layer.registerNoteOff(41, 64_norm, 0.5f));
-        REQUIRE(!layer.registerCC(63, 64_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 63, 64_norm, 0.0f));
     }
     // TODO: first and legato triggers
     SECTION("lovel and hivel")
@@ -130,18 +130,18 @@ TEST_CASE("Basic triggers", "Region triggers")
         region.parseOpcode({ "on_locc47", "64" });
         region.parseOpcode({ "on_hicc47", "68" });
         Layer layer1 { region, midiState };
-        REQUIRE(!layer1.registerCC(47, 63_norm, 0.0f));
-        REQUIRE(layer1.registerCC(47, 64_norm, 0.0f));
-        REQUIRE(layer1.registerCC(47, 65_norm, 0.0f));
+        REQUIRE(!layer1.registerCC(0, 47, 63_norm, 0.0f));
+        REQUIRE(layer1.registerCC(0, 47, 64_norm, 0.0f));
+        REQUIRE(layer1.registerCC(0, 47, 65_norm, 0.0f));
         region.parseOpcode({ "hikey", "-1" });
         Layer layer2 { region, midiState };
-        REQUIRE(layer2.registerCC(47, 64_norm, 0.0f));
-        REQUIRE(layer2.registerCC(47, 65_norm, 0.0f));
-        REQUIRE(layer2.registerCC(47, 66_norm, 0.0f));
-        REQUIRE(layer2.registerCC(47, 67_norm, 0.0f));
-        REQUIRE(layer2.registerCC(47, 68_norm, 0.0f));
-        REQUIRE(!layer2.registerCC(47, 69_norm, 0.0f));
-        REQUIRE(!layer2.registerCC(40, 64_norm, 0.0f));
+        REQUIRE(layer2.registerCC(0, 47, 64_norm, 0.0f));
+        REQUIRE(layer2.registerCC(0, 47, 65_norm, 0.0f));
+        REQUIRE(layer2.registerCC(0, 47, 66_norm, 0.0f));
+        REQUIRE(layer2.registerCC(0, 47, 67_norm, 0.0f));
+        REQUIRE(layer2.registerCC(0, 47, 68_norm, 0.0f));
+        REQUIRE(!layer2.registerCC(0, 47, 69_norm, 0.0f));
+        REQUIRE(!layer2.registerCC(0, 40, 64_norm, 0.0f));
     }
 
     SECTION("lorand and hirand with CC triggers")
@@ -152,14 +152,14 @@ TEST_CASE("Basic triggers", "Region triggers")
         region.parseOpcode({ "lorand", "0.35" });
         region.parseOpcode({ "hirand", "0.40" });
         Layer layer { region, midiState };
-        REQUIRE(!layer.registerCC(47, 64_norm, 0.0f));
-        REQUIRE(!layer.registerCC(47, 64_norm, 0.34f));
-        REQUIRE(layer.registerCC(47, 64_norm, 0.35f));
-        REQUIRE(layer.registerCC(47, 64_norm, 0.36f));
-        REQUIRE(layer.registerCC(47, 64_norm, 0.37f));
-        REQUIRE(layer.registerCC(47, 64_norm, 0.38f));
-        REQUIRE(layer.registerCC(47, 64_norm, 0.39f));
-        REQUIRE(!layer.registerCC(47, 64_norm, 0.40f));
+        REQUIRE(!layer.registerCC(0, 47, 64_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 47, 64_norm, 0.34f));
+        REQUIRE(layer.registerCC(0, 47, 64_norm, 0.35f));
+        REQUIRE(layer.registerCC(0, 47, 64_norm, 0.36f));
+        REQUIRE(layer.registerCC(0, 47, 64_norm, 0.37f));
+        REQUIRE(layer.registerCC(0, 47, 64_norm, 0.38f));
+        REQUIRE(layer.registerCC(0, 47, 64_norm, 0.39f));
+        REQUIRE(!layer.registerCC(0, 47, 64_norm, 0.40f));
     }
 
     SECTION("on_loccN does not disable key triggering")
@@ -168,9 +168,9 @@ TEST_CASE("Basic triggers", "Region triggers")
         region.parseOpcode({ "on_locc1", "127" });
         region.parseOpcode({ "on_hicc1", "127" });
         Layer layer { region, midiState };
-        REQUIRE(!layer.registerCC(1, 126_norm, 0.0f));
-        REQUIRE(!layer.registerCC(2, 127_norm, 0.0f));
-        REQUIRE(layer.registerCC(1, 127_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 1, 126_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 2, 127_norm, 0.0f));
+        REQUIRE(layer.registerCC(0, 1, 127_norm, 0.0f));
         REQUIRE(layer.registerNoteOn(64, 127_norm, 0.5f));
     }
 
@@ -181,8 +181,8 @@ TEST_CASE("Basic triggers", "Region triggers")
         region.parseOpcode({ "on_hicc1", "127" });
         region.parseOpcode({ "key", "-1" });
         Layer layer { region, midiState };
-        REQUIRE(!layer.registerCC(1, 126_norm, 0.0f));
-        REQUIRE(layer.registerCC(1, 127_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 1, 126_norm, 0.0f));
+        REQUIRE(layer.registerCC(0, 1, 127_norm, 0.0f));
         REQUIRE(!layer.registerNoteOn(64, 127_norm, 0.5f));
     }
 
@@ -193,9 +193,9 @@ TEST_CASE("Basic triggers", "Region triggers")
         region.parseOpcode({ "on_hicc1", "127" });
         region.parseOpcode({ "hikey", "-1" });
         Layer layer { region, midiState };
-        REQUIRE(!layer.registerCC(1, 126_norm, 0.0f));
-        REQUIRE(!layer.registerCC(2, 127_norm, 0.0f));
-        REQUIRE(layer.registerCC(1, 127_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 1, 126_norm, 0.0f));
+        REQUIRE(!layer.registerCC(0, 2, 127_norm, 0.0f));
+        REQUIRE(layer.registerCC(0, 1, 127_norm, 0.0f));
         REQUIRE(!layer.registerNoteOn(64, 127_norm, 0.5f));
     }
 }

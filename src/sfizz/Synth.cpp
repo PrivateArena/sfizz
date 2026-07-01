@@ -344,6 +344,8 @@ void Synth::Impl::clear()
     unknownOpcodes_.clear();
     modificationTime_ = absl::nullopt;
     playheadMoved_ = false;
+    hasChannelRestrictions_ = false;
+    resources_.getMidiState().setChannelRestrictions(false);
 
     initEffectBuses();
 }
@@ -880,8 +882,9 @@ void Synth::Impl::finalizeSfzLoad()
 
         // Defaults
         MidiState& midiState = resources_.getMidiState();
+        const int initChannel = region.channelRange.getStart() - 1;
         for (int cc = 0; cc < config::numCCs; cc++) {
-            layer.updateCCState(cc, midiState.getCCValue(cc));
+            layer.updateCCState(initChannel, cc, midiState.getCCValue(initChannel, cc));
         }
 
 
@@ -972,6 +975,16 @@ void Synth::Impl::finalizeSfzLoad()
     }
 
     modificationTime_ = checkModificationTime();
+
+    hasChannelRestrictions_ = false;
+    for (const LayerPtr& layerPtr : layers_) {
+        const Region& region = layerPtr->getRegion();
+        if (region.channelRange.getStart() != 1 || region.channelRange.getEnd() != 16) {
+            hasChannelRestrictions_ = true;
+            break;
+        }
+    }
+    resources_.getMidiState().setChannelRestrictions(hasChannelRestrictions_);
 
     settingsPerVoice_.maxFilters = maxFilters;
     settingsPerVoice_.maxEQs = maxEQs;
@@ -1310,7 +1323,7 @@ void Synth::hdNoteOn(int delay, int channel, int noteNumber, float normalizedVel
     // triggerChannel_=0. The legacy non-MPE API already passes channel=0
     // here, so this only affects callers that reached the *MPE entry directly
     // with a non-zero channel while MPE was off.
-    if (!impl.mpeEnabled_)
+    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1342,7 +1355,7 @@ void Synth::hdNoteOff(int delay, int channel, int noteNumber, float normalizedVe
     ASSERT(noteNumber < 128);
     ASSERT(noteNumber >= 0);
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_)
+    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1540,7 +1553,7 @@ void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, 
             }
         }
 
-        if (layer->registerCC(ccNumber, value, randValue, extendedArg)) {
+        if (layer->registerCC(channel, ccNumber, value, randValue, extendedArg)) {
             if (region.useTimerRange && ! voiceManager_.withinValidTimerRange(&region, midiState.getInternalClock() + delay, sampleRate_))
                 continue;
 
@@ -1617,11 +1630,9 @@ void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normVa
     // Normalize channel AFTER the RPN parser. The parser needs the real
     // channel to distinguish Manager-vs-Member MCM messages and route
     // RPN 0 (Pitch Bend Sensitivity) updates to the correct zone (master
-    // bend range vs per-note bend range). The MidiState write + voice CC
-    // updates that follow are the channel-aware storage path, and with
-    // MPE off they should land in channel-0 storage so consumers don't
-    // need to gate dispatch themselves.
-    if (!mpeEnabled_)
+    // bend range vs per-note bend range).
+    // MidiState write + voice CC updates that follow are the channel-aware storage path.
+    if (!mpeEnabled_ && !hasChannelRestrictions_)
         channel = 0;
 
     for (auto& voice : voiceManager_)
@@ -1757,9 +1768,9 @@ void Synth::pitchWheel(int delay, int channel, int pitch) noexcept
 void Synth::hdPitchWheel(int delay, int channel, float normalizedPitch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_)
+    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
         channel = 0;
-
+ 
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
     impl.resources_.getMidiState().pitchBendEvent(delay, channel, normalizedPitch);
 
@@ -1807,7 +1818,7 @@ void Synth::channelAftertouch(int delay, int channel, int aftertouch) noexcept
 void Synth::hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_)
+    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1842,7 +1853,7 @@ void Synth::polyAftertouch(int delay, int channel, int noteNumber, int aftertouc
 void Synth::hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_)
+    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
         channel = 0;
 
     // MPE 1.0 §2.2.7 / Appendix E Table 5: Polyphonic Key Pressure is
@@ -2469,8 +2480,9 @@ void Synth::Impl::resetAllControllers(int delay) noexcept
 
     for (const LayerPtr& layerPtr : layers_) {
         Layer& layer = *layerPtr;
+        const int initChannel = layer.getRegion().channelRange.getStart() - 1;
         for (int cc = 0; cc < config::numCCs; ++cc)
-            layer.updateCCState(cc, defaultCCValues_[cc]);
+            layer.updateCCState(initChannel, cc, defaultCCValues_[cc]);
     }
 }
 

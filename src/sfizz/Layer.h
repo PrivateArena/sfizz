@@ -87,12 +87,13 @@ public:
      * @param ccValue
      * @return false
      */
-    void updateCCState(int ccNumber, float ccValue) noexcept;
+    void updateCCState(int channel, int ccNumber, float ccValue) noexcept;
     /**
      * @brief Register a new CC event,. This method updates the internal CC state with respect
      * to CC events (sustain, CC switch, etc) and checks if the region should trigger on this
      * event.
      *
+     * @param channel
      * @param ccNumber
      * @param ccValue
      * @param randValue
@@ -100,7 +101,7 @@ public:
      * @return true if the region should trigger on this event
      * @return false otherwise
      */
-    bool registerCC(int ccNumber, float ccValue, float randValue, int extendedArg=-1) noexcept;
+    bool registerCC(int channel, int ccNumber, float ccValue, float randValue, int extendedArg=-1) noexcept;
     /**
      * @brief Register a new pitch wheel event.
      *

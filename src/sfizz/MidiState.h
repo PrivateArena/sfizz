@@ -316,6 +316,9 @@ public:
     void setMPEEnabled(bool enabled) noexcept { mpeEnabled_ = enabled; }
     bool getMPEEnabled() const noexcept { return mpeEnabled_; }
 
+    void setChannelRestrictions(bool restricted) noexcept { hasChannelRestrictions_ = restricted; }
+    bool getChannelRestrictions() const noexcept { return hasChannelRestrictions_; }
+
 private:
 
     /**
@@ -395,6 +398,7 @@ private:
     float mpeMasterPitchBendRange_ { 2.0f };
     float mpePerNotePitchBendRange_ { 48.0f };
     bool mpeEnabled_ { false };
+    bool hasChannelRestrictions_ { false };
 
     /**
      * @brief Null event

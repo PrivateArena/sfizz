@@ -212,7 +212,7 @@ float sfz::MidiState::getPitchBend(int channel) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].pitchEvents;
     if (events.empty()) {
-        if (channel != masterChannel)
+        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
             return getPitchBend(masterChannel);
         return 0.0f;
     }
@@ -260,7 +260,7 @@ float sfz::MidiState::getChannelAftertouch(int channel) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].channelAftertouchEvents;
     if (events.empty()) {
-        if (channel != masterChannel)
+        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
             return getChannelAftertouch(masterChannel);
         return 0.0f;
     }
@@ -281,7 +281,7 @@ float sfz::MidiState::getPolyAftertouch(int channel, int noteNumber) const noexc
 
     const auto& events = channelStates[channel].polyAftertouchEvents[noteNumber];
     if (events.empty()) {
-        if (channel != masterChannel)
+        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
             return getPolyAftertouch(masterChannel, noteNumber);
         return 0.0f;
     }
@@ -314,7 +314,7 @@ float sfz::MidiState::getCCValue(int channel, int ccNumber) const noexcept
         return 0.0f;
     const auto& events = channelStates[channel].ccEvents[ccNumber];
     if (events.empty()) {
-        if (channel != masterChannel)
+        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
             return getCCValue(masterChannel, ccNumber);
         return 0.0f;
     }
@@ -333,7 +333,7 @@ float sfz::MidiState::getCCValueAt(int channel, int ccNumber, int delay) const n
         return 0.0f;
     const auto& events = channelStates[channel].ccEvents[ccNumber];
     if (events.empty()) {
-        if (channel != masterChannel)
+        if (channel != masterChannel && (mpeEnabled_ || !hasChannelRestrictions_))
             return getCCValueAt(masterChannel, ccNumber, delay);
         return 0.0f;
     }

@@ -1711,7 +1711,7 @@ int Voice::expressionChannel() const noexcept
 
 int Voice::Impl::expressionChannel() const noexcept
 {
-    return (released() && triggerChannel_ != 0) ? 0 : triggerChannel_;
+    return (resources_.getMidiState().getMPEEnabled() && released() && triggerChannel_ != 0) ? 0 : triggerChannel_;
 }
 
 bool Voice::Impl::released() const noexcept
