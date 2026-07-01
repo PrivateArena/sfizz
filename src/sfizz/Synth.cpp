@@ -1397,14 +1397,21 @@ void Synth::Impl::noteOffDispatch(int delay, int channel, int noteNumber, float 
     SisterVoiceRingBuilder ring;
     const TriggerEvent triggerEvent { TriggerEventType::NoteOff, noteNumber, velocity, channel };
 
-    for (Layer* layer : upKeyswitchLists_[noteNumber])
-        layer->keySwitched_ = true;
+    for (Layer* layer : upKeyswitchLists_[noteNumber]) {
+        if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+            layer->keySwitched_ = true;
+    }
 
-    for (Layer* layer : downKeyswitchLists_[noteNumber])
-        layer->keySwitched_ = false;
+    for (Layer* layer : downKeyswitchLists_[noteNumber]) {
+        if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+            layer->keySwitched_ = false;
+    }
 
     for (Layer* layer : noteActivationLists_[noteNumber]) {
         const Region& region = layer->getRegion();
+        if (!region.channelRange.containsWithEnd(channel + 1))
+            continue;
+
         if (layer->registerNoteOff(noteNumber, velocity, randValue, channel)) {
             if (region.trigger == Trigger::release && !region.rtDead && !voiceManager_.playingAttackVoice(&region))
                 continue;
@@ -1423,24 +1430,35 @@ void Synth::Impl::noteOnDispatch(int delay, int channel, int noteNumber, float v
 
     if (!lastKeyswitchLists_[noteNumber].empty()) {
         if (currentSwitch_ && *currentSwitch_ != noteNumber) {
-            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_])
-                layer->keySwitched_ = false;
+            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_]) {
+                if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+                    layer->keySwitched_ = false;
+            }
         }
         currentSwitch_ = noteNumber;
     }
 
-    for (Layer* layer : lastKeyswitchLists_[noteNumber])
-        layer->keySwitched_ = true;
+    for (Layer* layer : lastKeyswitchLists_[noteNumber]) {
+        if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+            layer->keySwitched_ = true;
+    }
 
-    for (Layer* layer : upKeyswitchLists_[noteNumber])
-        layer->keySwitched_ = false;
+    for (Layer* layer : upKeyswitchLists_[noteNumber]) {
+        if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+            layer->keySwitched_ = false;
+    }
 
-    for (Layer* layer : downKeyswitchLists_[noteNumber])
-        layer->keySwitched_ = true;
+    for (Layer* layer : downKeyswitchLists_[noteNumber]) {
+        if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
+            layer->keySwitched_ = true;
+    }
 
     for (Layer* layer : noteActivationLists_[noteNumber]) {
+        const Region& region = layer->getRegion();
+        if (!region.channelRange.containsWithEnd(channel + 1))
+            continue;
+
         if (layer->registerNoteOn(noteNumber, velocity, randValue)) {
-            const Region& region = layer->getRegion();
             if (region.useTimerRange && !voiceManager_.withinValidTimerRange(&region, midiState.getInternalClock() + delay, sampleRate_))
                 continue;
 
@@ -1452,7 +1470,8 @@ void Synth::Impl::noteOnDispatch(int delay, int channel, int noteNumber, float v
 
     for (Layer* layer : previousKeyswitchLists_) {
         const Region& region = layer->getRegion();
-        layer->previousKeySwitched_ = (region.previousKeyswitch == noteNumber);
+        if (region.channelRange.containsWithEnd(channel + 1))
+            layer->previousKeySwitched_ = (region.previousKeyswitch == noteNumber);
     }
 }
 
@@ -1503,6 +1522,9 @@ void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, 
     MidiState& midiState = resources_.getMidiState();
     for (Layer* layer : ccActivationLists_[ccNumber]) {
         const Region& region = layer->getRegion();
+
+        if ((channel != 0 || !mpeEnabled_) && !region.channelRange.containsWithEnd(channel + 1))
+            continue;
 
         if (region.checkSustain && ccNumber == region.sustainCC && value < region.sustainThreshold)
             startDelayedSustainReleases(layer, delay, ring);

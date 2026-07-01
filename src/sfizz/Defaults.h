@@ -206,6 +206,8 @@ namespace Default
     extern const OpcodeSpec<uint8_t> key;
     extern const OpcodeSpec<uint8_t> loKey;
     extern const OpcodeSpec<uint8_t> hiKey;
+    extern const OpcodeSpec<uint8_t> loChannel;
+    extern const OpcodeSpec<uint8_t> hiChannel;
     extern const OpcodeSpec<float> loVel;
     extern const OpcodeSpec<float> hiVel;
     extern const OpcodeSpec<float> loCC;

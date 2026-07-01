@@ -1057,3 +1057,228 @@ TEST_CASE("[MPE][benchmark] MPE performance and allocation benchmark", "[.benchm
               << "[BENCHMARK RESULT] Audio thread allocations: " << g_alloc_count.load() << "\n"
               << "========================================\n" << std::endl;
 }
+
+TEST_CASE("[MPE] Regions filter note triggers by lochan/hichan")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+    
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_channel_gating.sfz", R"(
+        <region> sample=*sine lochan=2 hichan=2
+        <region> sample=*triangle lochan=3 hichan=3
+        <region> sample=*noise
+    )");
+
+    // 1. Note-On on Channel 2 (index 1)
+    // Should trigger *sine and *noise, but NOT *triangle
+    synth.noteOn(0, /*channel=*/1, 60, 100);
+    synth.renderBlock(buffer);
+    
+    auto activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 2);
+    
+    bool foundSine = false;
+    bool foundNoise = false;
+    bool foundTriangle = false;
+    for (const sfz::Voice* v : activeVoices) {
+        std::string name = v->getRegion()->sampleId->filename();
+        if (name == "*sine") foundSine = true;
+        if (name == "*noise") foundNoise = true;
+        if (name == "*triangle") foundTriangle = true;
+    }
+    REQUIRE(foundSine);
+    REQUIRE(foundNoise);
+    REQUIRE(!foundTriangle);
+
+    // Clean up
+    synth.allSoundOff();
+    synth.renderBlock(buffer);
+    REQUIRE(synth.getNumActiveVoices() == 0);
+
+    // 2. Note-On on Channel 3 (index 2)
+    // Should trigger *triangle and *noise, but NOT *sine
+    synth.noteOn(0, /*channel=*/2, 60, 100);
+    synth.renderBlock(buffer);
+    
+    activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 2);
+    
+    foundSine = false;
+    foundNoise = false;
+    foundTriangle = false;
+    for (const sfz::Voice* v : activeVoices) {
+        std::string name = v->getRegion()->sampleId->filename();
+        if (name == "*sine") foundSine = true;
+        if (name == "*noise") foundNoise = true;
+        if (name == "*triangle") foundTriangle = true;
+    }
+    REQUIRE(!foundSine);
+    REQUIRE(foundNoise);
+    REQUIRE(foundTriangle);
+
+    // Clean up
+    synth.allSoundOff();
+    synth.renderBlock(buffer);
+    
+    // 3. When MPE is disabled, channel collapsing maps everything to channel 0.
+    // Region A [2, 2] and B [3, 3] should not trigger on collapsed channel 0.
+    // Region C [1, 16] should trigger.
+    synth.setMPEEnabled(false);
+    synth.noteOn(0, /*channel=*/2, 60, 100);
+    synth.renderBlock(buffer);
+    
+    activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 1);
+    REQUIRE(activeVoices[0]->getRegion()->sampleId->filename() == "*noise");
+}
+
+TEST_CASE("[MPE] CC events are filtered by lochan/hichan range except on Channel 0")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_cc_gating.sfz", R"(
+        <region> sample=*sine lochan=2 hichan=2 on_locc1=64 on_hicc1=127
+        <region> sample=*triangle lochan=3 hichan=3 on_locc1=64 on_hicc1=127
+    )");
+
+    // 1. Send CC1 = 100 on Channel 2 (index 1)
+    // Should trigger Region A (*sine) because it's compatible, but not Region B (*triangle)
+    synth.cc(0, /*channel=*/1, 1, 100);
+    synth.renderBlock(buffer);
+
+    auto activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 1);
+    REQUIRE(activeVoices[0]->getRegion()->sampleId->filename() == "*sine");
+
+    // Clean up
+    synth.allSoundOff();
+    synth.renderBlock(buffer);
+
+    // 2. Send CC1 = 100 on Channel 1 (index 0) - Master Channel
+    // Under MPE, Channel 0 CCs are global/zone-wide and apply to all member channels.
+    // Therefore, it should trigger BOTH Region A and Region B!
+    synth.cc(0, /*channel=*/0, 1, 100);
+    synth.renderBlock(buffer);
+
+    activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 2);
+}
+
+TEST_CASE("[MPE] Keyswitch states are channel-gated by lochan/hichan")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_keyswitch_gating.sfz", R"(
+        <region> sample=*sine lochan=2 hichan=2 sw_last=24
+        <region> sample=*triangle lochan=3 hichan=3 sw_last=24
+    )");
+
+    // 1. Press keyswitch note 24 on Channel 2 (index 1)
+    synth.noteOn(0, /*channel=*/1, 24, 100);
+    synth.noteOff(0, /*channel=*/1, 24, 0);
+    synth.renderBlock(buffer);
+
+    // Now send Note-On 60 on Channel 2.
+    // Region A (*sine) should trigger because its keyswitch (24) was pressed on Channel 2.
+    // Region B (*triangle) should NOT trigger because the keyswitch on Channel 2 was ignored by it.
+    synth.noteOn(0, /*channel=*/1, 60, 100);
+    synth.renderBlock(buffer);
+
+    auto activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 1);
+    REQUIRE(activeVoices[0]->getRegion()->sampleId->filename() == "*sine");
+
+    // Clean up
+    synth.allSoundOff();
+    synth.renderBlock(buffer);
+
+    // 2. Press keyswitch note 24 on Channel 3 (index 2)
+    synth.noteOn(0, /*channel=*/2, 24, 100);
+    synth.noteOff(0, /*channel=*/2, 24, 0);
+    synth.renderBlock(buffer);
+
+    // Now send Note-On 60 on Channel 3.
+    // Region B (*triangle) should trigger, Region A should NOT.
+    synth.noteOn(0, /*channel=*/2, 60, 100);
+    synth.renderBlock(buffer);
+
+    activeVoices = synth.getActiveVoices();
+    REQUIRE(activeVoices.size() == 1);
+    REQUIRE(activeVoices[0]->getRegion()->sampleId->filename() == "*triangle");
+}
+
+TEST_CASE("[MPE] Note-off on a different channel does not release voice if channel doesn't match")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_noteoff_mismatch.sfz", R"(
+        <region> sample=*sine lochan=2 hichan=2 ampeg_release=1.0
+    )");
+
+    // Trigger note on Channel 2
+    synth.noteOn(0, /*channel=*/1, 60, 100);
+    synth.renderBlock(buffer);
+
+    REQUIRE(synth.getNumActiveVoices() == 1);
+
+    // Send Note-Off on Channel 3 (index 2) - mismatch
+    synth.noteOff(0, /*channel=*/2, 60, 0);
+    synth.renderBlock(buffer);
+
+    // Voice should still be playing and NOT in release phase (since channel mismatched)
+    REQUIRE(synth.getNumActiveVoices() == 1);
+
+    // Send Note-Off on Channel 2 (index 1) - matches
+    synth.noteOff(0, /*channel=*/1, 60, 0);
+    synth.renderBlock(buffer);
+
+    // Voice will now release and eventually stop
+    for (int i = 0; i < 50; ++i) {
+        synth.renderBlock(buffer);
+    }
+    REQUIRE(synth.getNumActiveVoices() == 0);
+}
+
+TEST_CASE("[MPE] Inverted channelRange permanently disables region")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(true);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_inverted_channel.sfz", R"(
+        <region> sample=*sine lochan=10 hichan=2
+    )");
+
+    // Trigger on any channel
+    for (int ch = 0; ch < 16; ++ch) {
+        synth.noteOn(0, ch, 60, 100);
+    }
+    synth.renderBlock(buffer);
+
+    // No voice should trigger
+    REQUIRE(synth.getNumActiveVoices() == 0);
+}
+
+TEST_CASE("[MPE] CC gating when MPE is disabled behaves correctly")
+{
+    sfz::Synth synth;
+    synth.setMPEEnabled(false);
+    sfz::AudioBuffer<float> buffer { 2, static_cast<unsigned>(synth.getSamplesPerBlock()) };
+
+    synth.loadSfzString(fs::current_path() / "tests/TestFiles/mpe_disabled_cc_gating.sfz", R"(
+        <region> sample=*sine lochan=5 hichan=5 on_locc1=64 on_hicc1=127
+    )");
+
+    // CC on channel 1 (collapsed to 0) should not trigger Region (range [5, 5])
+    synth.cc(0, /*channel=*/0, 1, 100);
+    synth.renderBlock(buffer);
+
+    REQUIRE(synth.getNumActiveVoices() == 0);
+}
