@@ -1,4 +1,11 @@
+.zenmcp/
 external/
+benchmarks/
+tests/
+demos/
+reviews/
+scripts/
+devtools/
 
 build*/*
 docs

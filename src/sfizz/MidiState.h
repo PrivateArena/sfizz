@@ -31,6 +31,7 @@ public:
      * @param velocity
      */
     void noteOnEvent(int delay, int noteNumber, float velocity) noexcept;
+    void noteOnEvent(int delay, int channel, int noteNumber, float velocity) noexcept;
 
     /**
      * @brief Update the state after a note off event
@@ -40,6 +41,7 @@ public:
      * @param velocity
      */
     void noteOffEvent(int delay, int noteNumber, float velocity) noexcept;
+    void noteOffEvent(int delay, int channel, int noteNumber, float velocity) noexcept;
 
     /**
      * @brief Set all notes off

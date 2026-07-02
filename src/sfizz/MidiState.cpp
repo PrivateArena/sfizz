@@ -16,6 +16,11 @@ sfz::MidiState::MidiState()
 
 void sfz::MidiState::noteOnEvent(int delay, int noteNumber, float velocity) noexcept
 {
+    noteOnEvent(delay, masterChannel, noteNumber, velocity);
+}
+
+void sfz::MidiState::noteOnEvent(int delay, int channel, int noteNumber, float velocity) noexcept
+{
     ASSERT(noteNumber >= 0 && noteNumber <= 127);
     ASSERT(velocity >= 0 && velocity <= 1.0);
 
@@ -31,22 +36,26 @@ void sfz::MidiState::noteOnEvent(int delay, int noteNumber, float velocity) noex
         noteOnTimes[noteNumber] = internalClock + static_cast<unsigned>(delay);
         lastNotePlayed = noteNumber;
         noteStates[noteNumber] = true;
-        ccEvent(delay, ExtendedCCs::noteOnVelocity, velocity);
-        ccEvent(delay, ExtendedCCs::keyboardNoteNumber, normalize7Bits(noteNumber));
-        ccEvent(delay, ExtendedCCs::unipolarRandom, unipolarDist(Random::randomGenerator));
-        ccEvent(delay, ExtendedCCs::bipolarRandom, bipolarDist(Random::randomGenerator));
-        ccEvent(delay, ExtendedCCs::keyboardNoteGate, activeNotes > 0 ? 1.0f : 0.0f);
-        ccEvent(delay, AriaExtendedCCs::keydelta, keydelta);
-        ccEvent(delay, AriaExtendedCCs::absoluteKeydelta, std::abs(keydelta));
+        ccEvent(delay, channel, ExtendedCCs::noteOnVelocity, velocity);
+        ccEvent(delay, channel, ExtendedCCs::keyboardNoteNumber, normalize7Bits(noteNumber));
+        ccEvent(delay, channel, ExtendedCCs::unipolarRandom, unipolarDist(Random::randomGenerator));
+        ccEvent(delay, channel, ExtendedCCs::bipolarRandom, bipolarDist(Random::randomGenerator));
+        ccEvent(delay, channel, ExtendedCCs::keyboardNoteGate, activeNotes > 0 ? 1.0f : 0.0f);
+        ccEvent(delay, channel, AriaExtendedCCs::keydelta, keydelta);
+        ccEvent(delay, channel, AriaExtendedCCs::absoluteKeydelta, std::abs(keydelta));
         activeNotes++;
 
-        ccEvent(delay, ExtendedCCs::alternate, alternate);
+        ccEvent(delay, channel, ExtendedCCs::alternate, alternate);
         alternate = alternate == 0.0f ? 1.0f : 0.0f;
     }
-
 }
 
 void sfz::MidiState::noteOffEvent(int delay, int noteNumber, float velocity) noexcept
+{
+    noteOffEvent(delay, masterChannel, noteNumber, velocity);
+}
+
+void sfz::MidiState::noteOffEvent(int delay, int channel, int noteNumber, float velocity) noexcept
 {
     ASSERT(delay >= 0);
     ASSERT(noteNumber >= 0 && noteNumber <= 127);
@@ -54,15 +63,14 @@ void sfz::MidiState::noteOffEvent(int delay, int noteNumber, float velocity) noe
     UNUSED(velocity);
     if (noteNumber >= 0 && noteNumber < 128) {
         noteOffTimes[noteNumber] = internalClock + static_cast<unsigned>(delay);
-        ccEvent(delay, ExtendedCCs::noteOffVelocity, velocity);
-        ccEvent(delay, ExtendedCCs::keyboardNoteNumber, normalize7Bits(noteNumber));
-        ccEvent(delay, ExtendedCCs::unipolarRandom, unipolarDist(Random::randomGenerator));
-        ccEvent(delay, ExtendedCCs::bipolarRandom, bipolarDist(Random::randomGenerator));
+        ccEvent(delay, channel, ExtendedCCs::noteOffVelocity, velocity);
+        ccEvent(delay, channel, ExtendedCCs::keyboardNoteNumber, normalize7Bits(noteNumber));
+        ccEvent(delay, channel, ExtendedCCs::unipolarRandom, unipolarDist(Random::randomGenerator));
+        ccEvent(delay, channel, ExtendedCCs::bipolarRandom, bipolarDist(Random::randomGenerator));
         if (activeNotes > 0)
             activeNotes--;
         noteStates[noteNumber] = false;
     }
-
 }
 
 void sfz::MidiState::allNotesOff(int delay) noexcept

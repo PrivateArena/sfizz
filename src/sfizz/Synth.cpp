@@ -323,7 +323,8 @@ void Synth::Impl::clear()
     numOutputs_ = 1;
     noteOffset_ = 0;
     octaveOffset_ = 0;
-    currentSwitch_ = absl::nullopt;
+    for (auto& s : currentSwitch_)
+        s = absl::nullopt;
     defaultPath_ = "";
     image_ = "";
     midiState.resetNoteStates();
@@ -726,7 +727,9 @@ bool Synth::loadSfzString(const fs::path& path, absl::string_view text)
 
 void Synth::Impl::setCurrentSwitch(uint8_t noteValue)
 {
-    currentSwitch_ = noteValue + 12 * octaveOffset_ + noteOffset_;
+    uint8_t value = noteValue + 12 * octaveOffset_ + noteOffset_;
+    for (int ch = 0; ch < 16; ++ch)
+        currentSwitch_[ch] = value;
 }
 
 void Synth::Impl::finalizeSfzLoad()
@@ -849,8 +852,8 @@ void Synth::Impl::finalizeSfzLoad()
         }
 
         if (region.lastKeyswitch) {
-            if (currentSwitch_)
-                layer.keySwitched_ = (*currentSwitch_ == *region.lastKeyswitch);
+            if (currentSwitch_[0])
+                layer.keySwitched_ = (*currentSwitch_[0] == *region.lastKeyswitch);
 
             if (region.keyswitchLabel)
                 setKeyswitchLabel(*region.lastKeyswitch, *region.keyswitchLabel);
@@ -858,8 +861,8 @@ void Synth::Impl::finalizeSfzLoad()
 
         if (region.lastKeyswitchRange) {
             auto& range = *region.lastKeyswitchRange;
-            if (currentSwitch_)
-                layer.keySwitched_ = range.containsWithEnd(*currentSwitch_);
+            if (currentSwitch_[0])
+                layer.keySwitched_ = range.containsWithEnd(*currentSwitch_[0]);
 
             if (region.keyswitchLabel) {
                 for (uint8_t note = range.getStart(), end = range.getEnd(); note <= end; note++)
@@ -979,8 +982,7 @@ void Synth::Impl::finalizeSfzLoad()
 
     hasChannelRestrictions_ = false;
     for (const LayerPtr& layerPtr : layers_) {
-        const Region& region = layerPtr->getRegion();
-        if (region.channelRange.getStart() != 1 || region.channelRange.getEnd() != 16) {
+        if (layerPtr->getRegion().hasCustomChannelRange()) {
             hasChannelRestrictions_ = true;
             break;
         }
@@ -1329,7 +1331,7 @@ void Synth::hdNoteOn(int delay, int channel, int noteNumber, float normalizedVel
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
     if (impl.lastKeyswitchLists_[noteNumber].empty())
-        impl.resources_.getMidiState().noteOnEvent(delay, noteNumber, normalizedVelocity);
+        impl.resources_.getMidiState().noteOnEvent(delay, channel, noteNumber, normalizedVelocity);
 
     impl.noteOnDispatch(delay, channel, noteNumber, normalizedVelocity);
 }
@@ -1366,7 +1368,7 @@ void Synth::hdNoteOff(int delay, int channel, int noteNumber, float normalizedVe
     MidiState& midiState = impl.resources_.getMidiState();
 
     if (impl.lastKeyswitchLists_[noteNumber].empty())
-        midiState.noteOffEvent(delay, noteNumber, normalizedVelocity);
+        midiState.noteOffEvent(delay, channel, noteNumber, normalizedVelocity);
 
     const auto replacedVelocity = midiState.getNoteVelocity(noteNumber);
 
@@ -1443,13 +1445,13 @@ void Synth::Impl::noteOnDispatch(int delay, int channel, int noteNumber, float v
     MidiState& midiState = resources_.getMidiState();
 
     if (!lastKeyswitchLists_[noteNumber].empty()) {
-        if (currentSwitch_ && *currentSwitch_ != noteNumber) {
-            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_]) {
+        if (currentSwitch_[channel] && *currentSwitch_[channel] != noteNumber) {
+            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_[channel]]) {
                 if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
                     layer->keySwitched_ = false;
             }
         }
-        currentSwitch_ = noteNumber;
+        currentSwitch_[channel] = noteNumber;
     }
 
     for (Layer* layer : lastKeyswitchLists_[noteNumber]) {
@@ -1537,7 +1539,9 @@ void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, 
     for (Layer* layer : ccActivationLists_[ccNumber]) {
         const Region& region = layer->getRegion();
 
-        if ((channel != 0 || !mpeEnabled_) && !region.channelRange.containsWithEnd(channel + 1))
+        // MPE master CC (channel=0 with MPE active) applies zone-wide; skip range check.
+        const bool isMpeGlobalCC = mpeEnabled_ && (channel == 0);
+        if (!isMpeGlobalCC && !region.channelRange.containsWithEnd(channel + 1))
             continue;
 
         if (region.checkSustain && ccNumber == region.sustainCC && value < region.sustainThreshold)
