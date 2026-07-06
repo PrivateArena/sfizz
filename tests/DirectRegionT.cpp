@@ -43,7 +43,7 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 0.0f);
-        layer.updateCCState(64, 0.0f);
+        layer.updateCCState(0, 64, 0.0f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         REQUIRE( layer.registerNoteOff(63, 0.5f, 0.0f) );
     }
@@ -53,7 +53,7 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 1.0f);
-        layer.updateCCState(64, 1.0f);
+        layer.updateCCState(0, 64, 1.0f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         REQUIRE( layer.registerNoteOff(63, 0.5f, 0.0f) );
     }
@@ -64,7 +64,7 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 0.0f);
-        layer.updateCCState(64, 0.0f);
+        layer.updateCCState(0, 64, 0.0f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         REQUIRE( layer.registerNoteOff(63, 0.5f, 0.0f) );
     }
@@ -75,13 +75,13 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 1.0f);
-        layer.updateCCState(64, 1.0f);
+        layer.updateCCState(0, 64, 1.0f);
         midiState.noteOnEvent(0, 63, 0.5f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         REQUIRE( !layer.registerNoteOff(63, 0.5f, 0.0f) );
         REQUIRE( layer.delayedSustainReleases_.size() == 1 );
-        std::vector<std::pair<int, float>> expected = {
-            { 63, 0.5f }
+        std::vector<Layer::DelayedRelease> expected = {
+            { 63, 0.5f, 0 }
         };
         REQUIRE( layer.delayedSustainReleases_ == expected );
     }
@@ -92,7 +92,7 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 1.0f);
-        layer.updateCCState(64, 1.0f);
+        layer.updateCCState(0, 64, 1.0f);
         midiState.noteOnEvent(0, 63, 0.5f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         midiState.noteOnEvent(0, 64, 0.6f);
@@ -100,9 +100,9 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         REQUIRE( !layer.registerNoteOff(63, 0.0f, 0.0f) );
         REQUIRE( !layer.registerNoteOff(64, 0.2f, 0.0f) );
         REQUIRE( layer.delayedSustainReleases_.size() == 2 );
-        std::vector<std::pair<int, float>> expected = {
-            { 63, 0.5f },
-            { 64, 0.6f }
+        std::vector<Layer::DelayedRelease> expected = {
+            { 63, 0.5f, 0 },
+            { 64, 0.6f, 0 }
         };
         REQUIRE( layer.delayedSustainReleases_ == expected );
     }
@@ -113,7 +113,7 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         Layer layer { region, midiState };
         layer.delayedSustainReleases_.reserve(config::delayedReleaseVoices);
         midiState.ccEvent(0, 64, 1.0f);
-        layer.updateCCState(64, 1.0f);
+        layer.updateCCState(0, 64, 1.0f);
         midiState.noteOnEvent(0, 63, 0.5f);
         REQUIRE( !layer.registerNoteOn(63, 0.5f, 0.0f) );
         midiState.noteOnEvent(0, 66, 0.6f);
@@ -121,8 +121,8 @@ TEST_CASE("[Direct Region Tests] Release and release key")
         REQUIRE( !layer.registerNoteOff(63, 0.0f, 0.0f) );
         REQUIRE( !layer.registerNoteOff(66, 0.2f, 0.0f) );
         REQUIRE( layer.delayedSustainReleases_.size() == 1 );
-        std::vector<std::pair<int, float>> expected = {
-            { 63, 0.5f }
+        std::vector<Layer::DelayedRelease> expected = {
+            { 63, 0.5f, 0 }
         };
         REQUIRE( layer.delayedSustainReleases_ == expected );
     }

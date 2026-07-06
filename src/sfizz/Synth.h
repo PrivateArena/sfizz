@@ -537,6 +537,155 @@ public:
      */
     void playbackState(int delay, int playbackState);
 
+    // === MPE (MIDI Polyphonic Expression) support ============================
+    //
+    // The methods below mirror the existing single-channel input API but take
+    // an additional MIDI channel argument (0..15). They populate per-channel
+    // modulation state in MidiState so voices triggered on a member channel
+    // respond independently to per-note pitch bend, per-note CC, and per-note
+    // aftertouch. Hosts that don't care about MPE can keep using the existing
+    // single-channel methods, which forward to the MPE variants with channel
+    // = 0 (master).
+    //
+    // setMPEEnabled() is informational for now: it gates how the engine will
+    // interpret RPN-derived pitch-bend ranges and how voice stealing prefers
+    // same-channel candidates (follow-up commits). Per-channel input dispatch
+    // works regardless of the flag — calling pitchWheel(channel=2, ...)
+    // always lands in MidiState's channel-2 slot.
+
+    /**
+     * @brief Send a note on event on a specific MIDI channel (0..15).
+     */
+    void noteOn(int delay, int channel, int noteNumber, int velocity) noexcept;
+    /**
+     * @brief High-precision note on on a specific MIDI channel.
+     */
+    void hdNoteOn(int delay, int channel, int noteNumber, float normalizedVelocity) noexcept;
+    /**
+     * @brief Send a note off event on a specific MIDI channel (0..15).
+     */
+    void noteOff(int delay, int channel, int noteNumber, int velocity) noexcept;
+    /**
+     * @brief High-precision note off on a specific MIDI channel.
+     */
+    void hdNoteOff(int delay, int channel, int noteNumber, float normalizedVelocity) noexcept;
+    /**
+     * @brief Send a CC event on a specific MIDI channel (0..15).
+     */
+    void cc(int delay, int channel, int ccNumber, int ccValue) noexcept;
+    /**
+     * @brief High-precision CC on a specific MIDI channel.
+     */
+    void hdcc(int delay, int channel, int ccNumber, float normValue) noexcept;
+    /**
+     * @brief Send a pitch bend event on a specific MIDI channel (0..15).
+     */
+    void pitchWheel(int delay, int channel, int pitch) noexcept;
+    /**
+     * @brief High-precision pitch bend on a specific MIDI channel.
+     */
+    void hdPitchWheel(int delay, int channel, float normalizedPitch) noexcept;
+    /**
+     * @brief Send a channel aftertouch event on a specific MIDI channel.
+     */
+    void channelAftertouch(int delay, int channel, int aftertouch) noexcept;
+    /**
+     * @brief High-precision channel aftertouch on a specific MIDI channel.
+     */
+    void hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept;
+    /**
+     * @brief Send a polyphonic aftertouch event on a specific MIDI channel.
+     */
+    void polyAftertouch(int delay, int channel, int noteNumber, int aftertouch) noexcept;
+    /**
+     * @brief High-precision polyphonic aftertouch on a specific MIDI channel.
+     */
+    void hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept;
+
+    /**
+     * @brief Enable or disable MPE mode. The flag is stored on the synth and
+     * surfaced via getMPEEnabled(). Per-channel input dispatch works whether
+     * or not this is set; the flag is consumed by features that need to know
+     * the current zone (RPN-driven pitch-bend range application, MPE-aware
+     * voice stealing). Default is false.
+     */
+    void setMPEEnabled(bool enabled) noexcept;
+    /**
+     * @brief Get whether MPE mode is currently enabled.
+     */
+    bool getMPEEnabled() const noexcept;
+
+    /**
+     * @brief Set the MPE pitch-bend range, in semitones. MPE 1.0 conventions:
+     * master default 2 semitones (typical DAW-side bend), per-note default
+     * 48 semitones (full keyboard range for finger slides). Values are
+     * stored on the synth and applied per-voice during rendering when MPE
+     * is enabled.
+     */
+    void setMPEPitchBendRange(float masterSemitones, float perNoteSemitones) noexcept;
+    /**
+     * @brief Get the master-channel pitch-bend range in semitones.
+     */
+    float getMPEMasterPitchBendRange() const noexcept;
+    /**
+     * @brief Get the member-channel (per-note) pitch-bend range in semitones.
+     */
+    float getMPEPerNotePitchBendRange() const noexcept;
+
+    /**
+     * @brief Toggle whether incoming Pitch Bend Sensitivity (RPN 0)
+     * sequences on the master channel update the master bend range.
+     * Disabling this pins the master range to whatever the host last
+     * set via setMPEPitchBendRange. MPE Configuration Messages (RPN 6)
+     * are processed unconditionally — this gate covers only the bend
+     * range. Defaults to true.
+     */
+    void setMPEMasterBendAutoConfigEnabled(bool enabled) noexcept;
+    /**
+     * @brief Get whether master-channel Pitch Bend Sensitivity messages
+     * update the master bend range.
+     */
+    bool getMPEMasterBendAutoConfigEnabled() const noexcept;
+
+    /**
+     * @brief Toggle whether incoming Pitch Bend Sensitivity (RPN 0)
+     * sequences on member channels update the per-note bend range.
+     * Disabling this pins the per-note range. Defaults to true.
+     */
+    void setMPEPerNoteBendAutoConfigEnabled(bool enabled) noexcept;
+    /**
+     * @brief Get whether member-channel Pitch Bend Sensitivity messages
+     * update the per-note bend range.
+     */
+    bool getMPEPerNoteBendAutoConfigEnabled() const noexcept;
+
+    /**
+     * @brief Diagnostic count of Polyphonic Key Pressure events the engine
+     * dropped because they arrived on a Member Channel while MPE was
+     * enabled. MPE 1.0 §2.2.7 / Appendix E Table 5 mark Poly KP on Member
+     * Channels as prohibited; the engine silently drops them at the
+     * hdPolyAftertouch entry and increments this counter so hosts /
+     * tests can observe spec-violating traffic. Counter is not reset by
+     * setMPEEnabled, polyphony changes, or SFZ reloads.
+     */
+    int getDroppedPolyKpOnMemberCount() const noexcept;
+
+    /**
+     * @brief Diagnostic count of Manager-only CC messages the engine
+     * dropped because they arrived on a Member Channel while MPE was
+     * enabled. MPE 1.0 §2.3.1 / §2.3.3 (Appendix E Table 5) require pedal
+     * CCs (64-69), mode/reset CCs (120-125 excluding 122) and Bank Select
+     * (CC 0 / CC 32) to be honoured only on the Manager Channel; the
+     * engine drops them at the top of performHdcc and increments this
+     * counter so hosts / tests can observe spec-violating traffic. Program
+     * Change is filtered host-side because the engine programChange API
+     * does not carry a channel argument. Counter is not reset by
+     * setMPEEnabled, polyphony changes, or SFZ reloads.
+     */
+    int getDroppedManagerOnlyMessageCount() const noexcept;
+
+    // =========================================================================
+
     /**
      * @brief Render an block of audio data in the buffer. This call will reset
      * the synth in its waiting state for the next batch of events. The size of

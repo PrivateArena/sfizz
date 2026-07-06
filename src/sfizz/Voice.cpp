@@ -195,6 +195,14 @@ struct Voice::Impl
     bool released() const noexcept;
 
     /**
+     * @brief MPE 1.0 §2.2.6 / §2.2.7 / §2.2.8 released-note expression
+     * filter — see Voice::expressionChannel for semantics. Internal
+     * Voice::Impl mirror so per-block render code can call it without a
+     * round-trip through the public surface.
+     */
+    int expressionChannel() const noexcept;
+
+    /**
      * @brief Release the voice after a given delay
      *
      * @param delay
@@ -231,6 +239,15 @@ struct Voice::Impl
     SostenutoState sostenutoState_ { SostenutoState::Up };
 
     TriggerEvent triggerEvent_;
+    /**
+     * @brief MIDI channel (0..15) the voice was triggered on. Used to
+     * route per-voice modulation reads to the correct channel slot in
+     * MidiState. Default 0 (master) until channel-aware noteOn dispatch
+     * is added; populating this will let voices respond independently
+     * to per-note pitch bend / CC / aftertouch when MPE input is split
+     * across member channels.
+     */
+    int triggerChannel_ { 0 };
     absl::optional<int> triggerDelay_;
 
     float speedRatio_ { 1.0 };
@@ -419,6 +436,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
     impl.region_ = &region;
 
     impl.triggerEvent_ = event;
+    impl.triggerChannel_ = event.channel;
     if (impl.triggerEvent_.type == TriggerEventType::CC)
         impl.triggerEvent_.number = region.pitchKeycenter;
 
@@ -508,7 +526,7 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
     impl.resetCrossfades();
 
     for (unsigned i = 0; i < region.filters.size(); ++i) {
-        impl.filters_[i].setup(region, i, impl.triggerEvent_.number, impl.triggerEvent_.value);
+        impl.filters_[i].setup(region, i, impl.triggerEvent_.number, impl.triggerEvent_.value, impl.triggerChannel_);
     }
 
     for (unsigned i = 0; i < region.equalizers.size(); ++i) {
@@ -519,7 +537,25 @@ bool Voice::startVoice(Layer* layer, int delay, const TriggerEvent& event) noexc
     impl.sampleEnd_ = int(sampleEnd(region, midiState));
     impl.sampleSize_ = impl.sampleEnd_- impl.sourcePosition_ - 1;
     impl.bendSmoother_.setSmoothing(region.bendSmooth, impl.sampleRate_);
-    impl.bendSmoother_.reset(region.getBendInCents(midiState.getPitchBend()));
+    {
+        // Same master vs. member channel distinction as in pitchEnvelope:
+        // master uses region bend_up/down. Member channels combine their own
+        // bend (per-note range) with master bend (master range) per MPE 1.0.
+        float initialCents;
+        if (impl.triggerChannel_ == 0) {
+            initialCents = region.getBendInCents(midiState.getPitchBend(0));
+        }
+        else {
+            const float perNoteBend = midiState.getPitchBendRaw(impl.triggerChannel_);
+            const float masterBend = midiState.getPitchBendRaw(0);
+            const float perNoteCents =
+                midiState.getMPEBendRangeForChannel(impl.triggerChannel_) * 100.0f;
+            const float masterCents =
+                midiState.getMPEBendRangeForChannel(0) * 100.0f;
+            initialCents = perNoteBend * perNoteCents + masterBend * masterCents;
+        }
+        impl.bendSmoother_.reset(initialCents);
+    }
 
     ModMatrix& modMatrix = resources.getModMatrix();
     modMatrix.initVoice(impl.id_, region.getId(), impl.initialDelay_);
@@ -620,7 +656,7 @@ void Voice::Impl::off(int delay, bool fast) noexcept
     release(delay);
 }
 
-void Voice::registerNoteOff(int delay, int noteNumber, float velocity) noexcept
+void Voice::registerNoteOff(int delay, int channel, int noteNumber, float velocity) noexcept
 {
     ASSERT(velocity >= 0.0 && velocity <= 1.0);
     UNUSED(velocity);
@@ -632,7 +668,9 @@ void Voice::registerNoteOff(int delay, int noteNumber, float velocity) noexcept
     if (impl.state_ != State::playing)
         return;
 
-    if (impl.triggerEvent_.number == noteNumber && impl.triggerEvent_.type == TriggerEventType::NoteOn) {
+    if (impl.triggerEvent_.number == noteNumber
+        && impl.triggerEvent_.channel == channel
+        && impl.triggerEvent_.type == TriggerEventType::NoteOn) {
         impl.noteIsOff_ = true;
 
         if (impl.region_->loopMode == LoopMode::one_shot)
@@ -649,7 +687,7 @@ void Voice::registerNoteOff(int delay, int noteNumber, float velocity) noexcept
     }
 }
 
-void Voice::registerCC(int delay, int ccNumber, float ccValue) noexcept
+void Voice::registerCC(int delay, int channel, int ccNumber, float ccValue) noexcept
 {
     Impl& impl = *impl_;
     if (impl.region_ == nullptr)
@@ -658,6 +696,10 @@ void Voice::registerCC(int delay, int ccNumber, float ccValue) noexcept
     const Region& region = *impl.region_;
 
     if (impl.state_ != State::playing)
+        return;
+
+    int voiceChannel = impl.triggerChannel_;
+    if (channel != 0 && channel != voiceChannel)
         return;
 
     if (ccNumber != region.sustainCC && ccNumber != region.sostenutoCC)
@@ -839,12 +881,12 @@ void Voice::Impl::resetCrossfades() noexcept
     MidiState& midiState = resources_.getMidiState();
 
     for (const auto& mod : region_->crossfadeCCInRange) {
-        const auto value = midiState.getCCValue(mod.cc);
+        const auto value = midiState.getCCValue(triggerChannel_, mod.cc);
         xfadeValue *= crossfadeIn(mod.data, value, xfCurve);
     }
 
     for (const auto& mod : region_->crossfadeCCOutRange) {
-        const auto value = midiState.getCCValue(mod.cc);
+        const auto value = midiState.getCCValue(triggerChannel_, mod.cc);
         xfadeValue *= crossfadeOut(mod.data, value, xfCurve);
     }
 
@@ -867,9 +909,11 @@ void Voice::Impl::applyCrossfades(absl::Span<float> modulationSpan) noexcept
 
     fill<float>(*xfadeSpan, 1.0f);
 
+    const int xfadeChannel = expressionChannel();
+
     bool canShortcut = true;
     for (const auto& mod : region_->crossfadeCCInRange) {
-        const auto& events = midiState.getCCEvents(mod.cc);
+        const auto& events = midiState.getCCEvents(xfadeChannel, mod.cc);
         canShortcut &= (events.size() == 1);
         linearEnvelope(events, *tempSpan, [&](float x) {
             return crossfadeIn(mod.data, x, xfCurve);
@@ -878,7 +922,7 @@ void Voice::Impl::applyCrossfades(absl::Span<float> modulationSpan) noexcept
     }
 
     for (const auto& mod : region_->crossfadeCCOutRange) {
-        const auto& events = midiState.getCCEvents(mod.cc);
+        const auto& events = midiState.getCCEvents(xfadeChannel, mod.cc);
         canShortcut &= (events.size() == 1);
         linearEnvelope(events, *tempSpan, [&](float x) {
             return crossfadeOut(mod.data, x, xfCurve);
@@ -1663,6 +1707,17 @@ bool Voice::released() const noexcept
     return impl.released();
 }
 
+int Voice::expressionChannel() const noexcept
+{
+    Impl& impl = *impl_;
+    return impl.expressionChannel();
+}
+
+int Voice::Impl::expressionChannel() const noexcept
+{
+    return (resources_.getMidiState().getMPEEnabled() && released() && triggerChannel_ != 0) ? 0 : triggerChannel_;
+}
+
 bool Voice::Impl::released() const noexcept
 {
     if (!region_ || state_ != State::playing)
@@ -1982,15 +2037,81 @@ void Voice::Impl::pitchEnvelope(absl::Span<float> pitchSpan) noexcept
     const size_t numFrames = pitchSpan.size();
 
     const MidiState& midiState = resources_.getMidiState();
-    const EventVector& events = midiState.getPitchEvents();
-    const auto bendLambda = [this](float bend) {
-        return region_->getBendInCents(bend);
-    };
+    const bool isMaster = (triggerChannel_ == 0);
 
-    if (region_->bendStep > 1.0f)
-        linearEnvelope(events, pitchSpan, bendLambda, region_->bendStep);
-    else
-        linearEnvelope(events, pitchSpan, bendLambda);
+    if (isMaster) {
+        // Legacy / non-MPE path: single events vector, region bend_up/down.
+        const EventVector& events = midiState.getPitchEvents(triggerChannel_);
+        const auto bendLambda = [this](float bend) {
+            return region_->getBendInCents(bend);
+        };
+        if (region_->bendStep > 1.0f)
+            linearEnvelope(events, pitchSpan, bendLambda, region_->bendStep);
+        else
+            linearEnvelope(events, pitchSpan, bendLambda);
+    }
+    else {
+        // MPE 1.0: total bend = master_bend × master_range
+        //                    + per_note_bend × per_note_range.
+        // Read the two channels separately (no fallback) so the master
+        // contribution is preserved even after the member channel's events
+        // were populated by an earlier per-note bend. Either vector may be
+        // empty (member channels are populated lazily on first write), so
+        // guard the linearEnvelope calls — it asserts events.size() > 0.
+        //
+        // MPE 1.0 §2.2.6: once released, the voice must stop reacting to
+        // Member-Channel pitch bend (the controller will reuse the channel
+        // for the next finger) but should still honour Manager-Channel
+        // pitch bend. Skip the per-note read entirely when released —
+        // expressionChannel() returns 0 in that state but reading the
+        // master events as "per-note" would double-apply the master bend,
+        // so zero the per-note contribution explicitly.
+        const bool releasedMember = released();
+        const float perNoteCents = releasedMember ? 0.0f
+            : midiState.getMPEBendRangeForChannel(triggerChannel_) * 100.0f;
+        const float masterCents =
+            midiState.getMPEBendRangeForChannel(0) * 100.0f;
+
+        const EventVector& masterEvents = midiState.getPitchEventsRaw(0);
+
+        // Per-note contribution into pitchSpan.
+        if (!releasedMember) {
+            const EventVector& perNoteEvents = midiState.getPitchEventsRaw(triggerChannel_);
+            if (!perNoteEvents.empty()) {
+                const auto perNoteLambda = [perNoteCents](float bend) {
+                    return bend * perNoteCents;
+                };
+                if (region_->bendStep > 1.0f)
+                    linearEnvelope(perNoteEvents, pitchSpan, perNoteLambda, region_->bendStep);
+                else
+                    linearEnvelope(perNoteEvents, pitchSpan, perNoteLambda);
+            }
+            else {
+                std::fill(pitchSpan.begin(), pitchSpan.end(), 0.0f);
+            }
+        }
+        else {
+            std::fill(pitchSpan.begin(), pitchSpan.end(), 0.0f);
+        }
+
+        // Master contribution into a scratch buffer, then summed onto pitchSpan.
+        if (!masterEvents.empty()) {
+            auto& bufferPool = resources_.getBufferPool();
+            auto scratch = bufferPool.getBuffer(numFrames);
+            if (scratch) {
+                absl::Span<float> masterSpan = *scratch;
+                const auto masterLambda = [masterCents](float bend) {
+                    return bend * masterCents;
+                };
+                if (region_->bendStep > 1.0f)
+                    linearEnvelope(masterEvents, masterSpan, masterLambda, region_->bendStep);
+                else
+                    linearEnvelope(masterEvents, masterSpan, masterLambda);
+                for (size_t i = 0; i < numFrames; ++i)
+                    pitchSpan[i] += masterSpan[i];
+            }
+        }
+    }
     bendSmoother_.process(pitchSpan, pitchSpan);
 
     ModMatrix& mm = resources_.getModMatrix();

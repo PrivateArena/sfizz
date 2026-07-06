@@ -134,10 +134,15 @@ public:
      * @brief Register a note-off event; this may trigger a release.
      *
      * @param delay
+     * @param channel  MPE / MIDI channel of the note-off (0 for master /
+     *                 legacy single-channel). Only voices that started on the
+     *                 matching channel are released; voices on other channels
+     *                 are unaffected. This is what keeps overlapping notes on
+     *                 different MPE member channels independent.
      * @param noteNumber
      * @param velocity
      */
-    void registerNoteOff(int delay, int noteNumber, float velocity) noexcept;
+    void registerNoteOff(int delay, int channel, int noteNumber, float velocity) noexcept;
     /**
      * @brief Register a CC event; this may trigger a release. If the voice is playing and its
      * region has CC modifiers, it will use this value to compute the CC envelope to apply to the
@@ -147,7 +152,7 @@ public:
      * @param ccNumber
      * @param ccValue
      */
-    void registerCC(int delay, int ccNumber, float ccValue) noexcept;
+    void registerCC(int delay, int channel, int ccNumber, float ccValue) noexcept;
     /**
      * @brief Register a pitch wheel event; for now this does nothing
      *
@@ -212,6 +217,18 @@ public:
      * @return false
      */
     bool released() const noexcept;
+    /**
+     * @brief MPE 1.0 §2.2.6 / §2.2.7 / §2.2.8 released-note expression
+     * filter. Returns 0 (Lower Zone Manager Channel) once the voice is
+     * released if it was triggered on a Member Channel, otherwise the
+     * voice's trigger channel. Per-block expression readers (pitch bend,
+     * channel pressure, CC routes) should consult this rather than the
+     * raw trigger channel so a released voice stops responding to traffic
+     * on its old Member Channel — which the controller has by now
+     * reallocated to a fresh finger — while Manager Channel events still
+     * reach the release tail.
+     */
+    int expressionChannel() const noexcept;
     /**
      * @brief Can the voice be reused (i.e. is it releasing after being killed or free)
      *
@@ -482,6 +499,9 @@ inline bool sisterVoices(const Voice* lhs, const Voice* rhs)
     if (lhsTrigger.type != rhsTrigger.type)
         return false;
 
+    if (lhsTrigger.channel != rhsTrigger.channel)
+        return false;
+
     return true;
 }
 
@@ -501,6 +521,9 @@ inline bool voiceOrdering(const Voice* lhs, const Voice* rhs)
 
     if (lhsTrigger.type != rhsTrigger.type)
         return lhsTrigger.type > rhsTrigger.type;
+
+    if (lhsTrigger.channel != rhsTrigger.channel)
+        return lhsTrigger.channel < rhsTrigger.channel;
 
     return false;
 }

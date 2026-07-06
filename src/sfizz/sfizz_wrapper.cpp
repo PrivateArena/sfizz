@@ -177,6 +177,98 @@ void sfizz_send_hd_poly_aftertouch(sfizz_synth_t* synth, int delay, int note_num
 {
     synth->synth.hdPolyAftertouch(delay, note_number, aftertouch);
 }
+void sfizz_send_note_on_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int velocity)
+{
+    synth->synth.noteOn(delay, channel, note_number, velocity);
+}
+void sfizz_send_hd_note_on_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float velocity)
+{
+    synth->synth.hdNoteOn(delay, channel, note_number, velocity);
+}
+void sfizz_send_note_off_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int velocity)
+{
+    synth->synth.noteOff(delay, channel, note_number, velocity);
+}
+void sfizz_send_hd_note_off_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float velocity)
+{
+    synth->synth.hdNoteOff(delay, channel, note_number, velocity);
+}
+void sfizz_send_cc_channel(sfizz_synth_t* synth, int delay, int channel, int cc_number, int cc_value)
+{
+    synth->synth.cc(delay, channel, cc_number, cc_value);
+}
+void sfizz_send_hdcc_channel(sfizz_synth_t* synth, int delay, int channel, int cc_number, float norm_value)
+{
+    synth->synth.hdcc(delay, channel, cc_number, norm_value);
+}
+void sfizz_send_pitch_wheel_channel(sfizz_synth_t* synth, int delay, int channel, int pitch)
+{
+    synth->synth.pitchWheel(delay, channel, pitch);
+}
+void sfizz_send_hd_pitch_wheel_channel(sfizz_synth_t* synth, int delay, int channel, float pitch)
+{
+    synth->synth.hdPitchWheel(delay, channel, pitch);
+}
+void sfizz_send_channel_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int aftertouch)
+{
+    synth->synth.channelAftertouch(delay, channel, aftertouch);
+}
+void sfizz_send_hd_channel_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, float aftertouch)
+{
+    synth->synth.hdChannelAftertouch(delay, channel, aftertouch);
+}
+void sfizz_send_poly_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int aftertouch)
+{
+    synth->synth.polyAftertouch(delay, channel, note_number, aftertouch);
+}
+void sfizz_send_hd_poly_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float aftertouch)
+{
+    synth->synth.hdPolyAftertouch(delay, channel, note_number, aftertouch);
+}
+void sfizz_set_mpe_enabled(sfizz_synth_t* synth, bool enabled)
+{
+    synth->synth.setMPEEnabled(enabled);
+}
+bool sfizz_get_mpe_enabled(sfizz_synth_t* synth)
+{
+    return synth->synth.getMPEEnabled();
+}
+void sfizz_set_mpe_pitch_bend_range(sfizz_synth_t* synth, float master_semitones, float per_note_semitones)
+{
+    synth->synth.setMPEPitchBendRange(master_semitones, per_note_semitones);
+}
+float sfizz_get_mpe_master_pitch_bend_range(sfizz_synth_t* synth)
+{
+    return synth->synth.getMPEMasterPitchBendRange();
+}
+float sfizz_get_mpe_per_note_pitch_bend_range(sfizz_synth_t* synth)
+{
+    return synth->synth.getMPEPerNotePitchBendRange();
+}
+void sfizz_set_mpe_master_bend_auto_config_enabled(sfizz_synth_t* synth, bool enabled)
+{
+    synth->synth.setMPEMasterBendAutoConfigEnabled(enabled);
+}
+bool sfizz_get_mpe_master_bend_auto_config_enabled(sfizz_synth_t* synth)
+{
+    return synth->synth.getMPEMasterBendAutoConfigEnabled();
+}
+void sfizz_set_mpe_per_note_bend_auto_config_enabled(sfizz_synth_t* synth, bool enabled)
+{
+    synth->synth.setMPEPerNoteBendAutoConfigEnabled(enabled);
+}
+bool sfizz_get_mpe_per_note_bend_auto_config_enabled(sfizz_synth_t* synth)
+{
+    return synth->synth.getMPEPerNoteBendAutoConfigEnabled();
+}
+int sfizz_get_dropped_poly_kp_on_member_count(sfizz_synth_t* synth)
+{
+    return synth->synth.getDroppedPolyKpOnMemberCount();
+}
+int sfizz_get_dropped_manager_only_message_count(sfizz_synth_t* synth)
+{
+    return synth->synth.getDroppedManagerOnlyMessageCount();
+}
 void sfizz_send_tempo(sfizz_synth_t* synth, int delay, float seconds_per_quarter)
 {
     synth->synth.tempo(delay, seconds_per_quarter);

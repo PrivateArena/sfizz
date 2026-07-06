@@ -37,6 +37,7 @@ void FlexEnvelopeSource::init(const ModKey& sourceKey, NumericId<Voice> voiceId,
     }
 
     FlexEnvelope* eg = voice->getFlexEG(egIndex);
+    eg->setChannel(voice->expressionChannel());
     eg->configure(&region->flexEGs[egIndex]);
     bool freeRunning = (
         (region->loopMode == LoopMode::one_shot && region->isOscillator())

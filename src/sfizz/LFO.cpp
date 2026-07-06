@@ -72,7 +72,7 @@ void LFO::configure(const LFODescription* desc)
     impl.phaseKeyId = modMatrix.findTarget(desc->phaseKey);
 }
 
-void LFO::start(unsigned triggerDelay)
+void LFO::start(unsigned triggerDelay, int channel)
 {
     Impl& impl = *impl_;
     const LFODescription& desc = *impl.desc_;
@@ -85,14 +85,14 @@ void LFO::start(unsigned triggerDelay)
 
     float delay = desc.delay;
     for (const auto& mod: desc.delayCC)
-        delay += mod.data * state.getCCValue(mod.cc);
+        delay += mod.data * state.getCCValue(channel, mod.cc);
 
     size_t delayFrames = (delay > 0) ? static_cast<size_t>(std::ceil(sampleRate * delay)) : 0u;
     impl.delayFramesLeft_ = triggerDelay + delayFrames;
 
     float fade = desc.fade;
     for (const auto& mod: desc.fadeCC)
-        fade += mod.data * state.getCCValue(mod.cc);
+        fade += mod.data * state.getCCValue(channel, mod.cc);
 
     impl.fadeTime_ = fade;
     impl.fadePosition_ = (fade > 0) ? 0.0f : 1.0f;

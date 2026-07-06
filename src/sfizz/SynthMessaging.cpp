@@ -50,7 +50,7 @@ void sfz::Synth::dispatchMessage(Client& client, int delay, const char* path, co
         MATCH("/image_controls", "") { m.reply(impl.image_controls_.c_str()); } break;
         //----------------------------------------------------------------------
         MATCH("/sw/last/slots", "") { m.reply(impl.swLastSlots_); } break;
-        MATCH("/sw/last/current", "") { m.reply(impl.currentSwitch_); } break;
+        MATCH("/sw/last/current", "") { m.reply(impl.currentSwitch_[0]); } break;
         MATCH("/sw/last/&/label", "") { if (auto k = m.sindex(0)) m.reply(impl.getKeyswitchLabel(*k)); } break;
         //----------------------------------------------------------------------
         MATCH("/cc/slots", "") { m.reply(impl.currentUsedCCs_); } break;

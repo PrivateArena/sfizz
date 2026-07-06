@@ -274,6 +274,11 @@ struct Region {
 
     // Region logic: key mapping
     UncheckedRange<uint8_t> keyRange { Default::loKey, Default::hiKey }; //lokey, hikey and key
+    UncheckedRange<uint8_t> channelRange { Default::loChannel, Default::hiChannel }; // lochan, hichan
+    bool hasCustomChannelRange() const noexcept
+    {
+        return channelRange.getStart() != 1 || channelRange.getEnd() != 16;
+    }
     UncheckedRange<float> velocityRange { Default::loVel, Default::hiVel }; // hivel and lovel
 
     // Region logic: MIDI conditions

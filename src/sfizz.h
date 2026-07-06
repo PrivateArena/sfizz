@@ -612,6 +612,312 @@ SFIZZ_EXPORTED_API void sfizz_send_poly_aftertouch(sfizz_synth_t* synth, int del
 SFIZZ_EXPORTED_API void sfizz_send_hd_poly_aftertouch(sfizz_synth_t* synth, int delay, int note_number, float aftertouch);
 
 /**
+ * @defgroup MPE MIDI Polyphonic Expression
+ *
+ * Channel-aware variants of the input API. They populate per-channel
+ * modulation state in the underlying engine so voices triggered on a
+ * member channel respond independently to per-note pitch bend, per-note
+ * CC, and per-note aftertouch. Hosts that don't care about MPE can keep
+ * using the existing single-channel methods; they are equivalent to
+ * calling the corresponding `_channel` method with channel = 0 (master).
+ *
+ * sfizz_set_mpe_enabled() gates channel routing engine-wide. With MPE
+ * disabled, the `_channel` methods collapse channel to 0 internally so
+ * both API surfaces behave identically (single-channel, pre-MPE
+ * semantics). With MPE enabled, the channel argument is honoured
+ * end-to-end and the MPE 1.0 spec-compliance filters (Manager-only
+ * CCs, member-channel Poly KP) apply.
+ *
+ * @{
+ */
+
+/**
+ * @brief Send a note on event on a specific MIDI channel (0..15).
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The MIDI note number, in domain 0 to 127.
+ * @param velocity     The MIDI velocity, in domain 0 to 127.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_note_on_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int velocity);
+
+/**
+ * @brief Send a high-precision note on event on a specific MIDI channel.
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The MIDI note number, in domain 0 to 127.
+ * @param velocity     The normalized MIDI velocity, in domain 0 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hd_note_on_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float velocity);
+
+/**
+ * @brief Send a note off event on a specific MIDI channel (0..15).
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The MIDI note number, in domain 0 to 127.
+ * @param velocity     The MIDI velocity, in domain 0 to 127.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_note_off_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int velocity);
+
+/**
+ * @brief Send a high-precision note off event on a specific MIDI channel.
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The MIDI note number, in domain 0 to 127.
+ * @param velocity     The normalized MIDI velocity, in domain 0 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hd_note_off_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float velocity);
+
+/**
+ * @brief Send a CC event on a specific MIDI channel (0..15).
+ *
+ * @param synth      The synth.
+ * @param delay      The delay of the event in the block, in samples.
+ * @param channel    The MIDI channel, in domain 0 to 15.
+ * @param cc_number  The MIDI CC number, in domain 0 to 127.
+ * @param cc_value   The MIDI CC value, in domain 0 to 127.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_cc_channel(sfizz_synth_t* synth, int delay, int channel, int cc_number, int cc_value);
+
+/**
+ * @brief Send a high-precision CC event on a specific MIDI channel.
+ *
+ * @param synth       The synth.
+ * @param delay       The delay of the event in the block, in samples.
+ * @param channel     The MIDI channel, in domain 0 to 15.
+ * @param cc_number   The MIDI CC number, in domain 0 to 127.
+ * @param norm_value  The normalized CC value, in domain 0 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hdcc_channel(sfizz_synth_t* synth, int delay, int channel, int cc_number, float norm_value);
+
+/**
+ * @brief Send a pitch wheel event on a specific MIDI channel (0..15).
+ *
+ * @param synth    The synth.
+ * @param delay    The delay of the event in the block, in samples.
+ * @param channel  The MIDI channel, in domain 0 to 15.
+ * @param pitch    The pitch.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_pitch_wheel_channel(sfizz_synth_t* synth, int delay, int channel, int pitch);
+
+/**
+ * @brief Send a high-precision pitch wheel event on a specific MIDI channel.
+ *
+ * @param synth    The synth.
+ * @param delay    The delay of the event in the block, in samples.
+ * @param channel  The MIDI channel, in domain 0 to 15.
+ * @param pitch    The normalized pitch, in domain -1 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hd_pitch_wheel_channel(sfizz_synth_t* synth, int delay, int channel, float pitch);
+
+/**
+ * @brief Send a channel aftertouch (channel pressure) event on a specific MIDI channel.
+ *
+ * @param synth       The synth.
+ * @param delay       The delay of the event in the block, in samples.
+ * @param channel     The MIDI channel, in domain 0 to 15.
+ * @param aftertouch  The aftertouch value, in domain 0 to 127.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_channel_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int aftertouch);
+
+/**
+ * @brief Send a high-precision channel aftertouch event on a specific MIDI channel.
+ *
+ * @param synth       The synth.
+ * @param delay       The delay of the event in the block, in samples.
+ * @param channel     The MIDI channel, in domain 0 to 15.
+ * @param aftertouch  The normalized aftertouch value, in domain 0 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hd_channel_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, float aftertouch);
+
+/**
+ * @brief Send a polyphonic aftertouch event on a specific MIDI channel.
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The note number, in domain 0 to 127.
+ * @param aftertouch   The aftertouch value, in domain 0 to 127.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_poly_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, int aftertouch);
+
+/**
+ * @brief Send a high-precision polyphonic aftertouch event on a specific MIDI channel.
+ *
+ * @param synth        The synth.
+ * @param delay        The delay of the event in the block, in samples.
+ * @param channel      The MIDI channel, in domain 0 to 15.
+ * @param note_number  The note number, in domain 0 to 127.
+ * @param aftertouch   The normalized aftertouch value, in domain 0 to 1.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_send_hd_poly_aftertouch_channel(sfizz_synth_t* synth, int delay, int channel, int note_number, float aftertouch);
+
+/**
+ * @brief Enable or disable MPE mode.
+ *
+ * Gates same-channel-preference voice stealing inside the engine.
+ * Per-channel input dispatch (the `_mpe` send functions above) works
+ * regardless of this flag.
+ *
+ * @param synth    The synth.
+ * @param enabled  Whether MPE mode is enabled.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_set_mpe_enabled(sfizz_synth_t* synth, bool enabled);
+
+/**
+ * @brief Get the current MPE mode flag.
+ *
+ * @param synth  The synth.
+ *
+ * @return Whether MPE mode is enabled.
+ */
+SFIZZ_EXPORTED_API bool sfizz_get_mpe_enabled(sfizz_synth_t* synth);
+
+/**
+ * @brief Set the MPE pitch bend range, in semitones (master / per-note).
+ *
+ * MPE 1.0 conventions: master 2 semitones, per-note 48 semitones.
+ *
+ * @param synth               The synth.
+ * @param master_semitones    The master-channel pitch bend range, in semitones.
+ * @param per_note_semitones  The per-note pitch bend range, in semitones.
+ *
+ * @par Thread-safety constraints
+ * - @b RT: the function must be invoked from the Real-time thread
+ */
+SFIZZ_EXPORTED_API void sfizz_set_mpe_pitch_bend_range(sfizz_synth_t* synth, float master_semitones, float per_note_semitones);
+
+/**
+ * @brief Get the configured MPE master pitch bend range, in semitones.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API float sfizz_get_mpe_master_pitch_bend_range(sfizz_synth_t* synth);
+
+/**
+ * @brief Get the configured MPE per-note pitch bend range, in semitones.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API float sfizz_get_mpe_per_note_pitch_bend_range(sfizz_synth_t* synth);
+
+/**
+ * @brief Toggle whether incoming MPE Pitch Bend Sensitivity (RPN 0)
+ * messages on the master channel update the master bend range. The
+ * MPE Configuration Message (RPN 6) is processed unconditionally —
+ * this gate covers only the bend range updates. Default is true.
+ *
+ * @param synth   The synth.
+ * @param enabled true to accept the messages, false to ignore them.
+ */
+SFIZZ_EXPORTED_API void sfizz_set_mpe_master_bend_auto_config_enabled(sfizz_synth_t* synth, bool enabled);
+
+/**
+ * @brief Get whether master-channel Pitch Bend Sensitivity messages
+ * update the master bend range.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API bool sfizz_get_mpe_master_bend_auto_config_enabled(sfizz_synth_t* synth);
+
+/**
+ * @brief Toggle whether incoming MPE Pitch Bend Sensitivity (RPN 0)
+ * messages on member channels update the per-note bend range. Default
+ * is true.
+ *
+ * @param synth   The synth.
+ * @param enabled true to accept the messages, false to ignore them.
+ */
+SFIZZ_EXPORTED_API void sfizz_set_mpe_per_note_bend_auto_config_enabled(sfizz_synth_t* synth, bool enabled);
+
+/**
+ * @brief Get whether member-channel Pitch Bend Sensitivity messages
+ * update the per-note bend range.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API bool sfizz_get_mpe_per_note_bend_auto_config_enabled(sfizz_synth_t* synth);
+
+/**
+ * @brief Diagnostic count of Polyphonic Key Pressure events the engine
+ * dropped because they arrived on a Member Channel while MPE was enabled.
+ *
+ * MPE 1.0 §2.2.7 / Appendix E Table 5 mark Polyphonic Key Pressure on
+ * Member Channels as prohibited. The engine drops such events at the
+ * `sfizz_send_*_poly_aftertouch_mpe` entry and increments this counter so
+ * hosts can observe spec-violating traffic. Counter is not reset by
+ * `sfizz_set_mpe_enabled`, polyphony changes, or SFZ reloads.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API int sfizz_get_dropped_poly_kp_on_member_count(sfizz_synth_t* synth);
+
+/**
+ * @brief Diagnostic count of Manager-only CC messages the engine dropped
+ * because they arrived on a Member Channel while MPE was enabled.
+ *
+ * MPE 1.0 §2.3.1 / §2.3.3 (Appendix E Table 5) require pedal CCs (64-69),
+ * mode/reset CCs (120-125 excluding 122) and Bank Select (CC 0 / CC 32)
+ * to be honoured only on the Manager Channel. The engine drops such
+ * events at the `sfizz_send_*cc` entry and increments this counter so
+ * hosts can observe spec-violating traffic. Program Change is filtered
+ * host-side because `sfizz_send_program_change` does not carry a channel.
+ * Counter is not reset by `sfizz_set_mpe_enabled`, polyphony changes, or
+ * SFZ reloads.
+ *
+ * @param synth  The synth.
+ */
+SFIZZ_EXPORTED_API int sfizz_get_dropped_manager_only_message_count(sfizz_synth_t* synth);
+
+/** @} */
+
+/**
  * @brief Send a tempo event.
  *
  * This command should be delay-ordered with all other time/signature commands, namely

@@ -48,6 +48,8 @@ UInt32Spec notePolyphony { config::maxVoices, {1, config::maxVoices}, kEnforceBo
 UInt8Spec key { 60, {0, 127}, kCanBeNote };
 UInt8Spec loKey { 0, {0, 127}, kCanBeNote };
 UInt8Spec hiKey { 127, {0, 127}, kCanBeNote };
+UInt8Spec loChannel { 1, {1, 16}, kEnforceBounds };
+UInt8Spec hiChannel { 16, {1, 16}, kEnforceBounds };
 FloatSpec loCC { 0, {0.0f, 127.0f}, kNormalizeMidi|kPermissiveBounds };
 FloatSpec hiCC { 127, {0.0f, 127.0f}, kNormalizeMidi|kFillGap|kPermissiveBounds };
 FloatSpec xfoutLo { 127.0f, {0.0f, 127.0f}, kNormalizeMidi|kPermissiveBounds };

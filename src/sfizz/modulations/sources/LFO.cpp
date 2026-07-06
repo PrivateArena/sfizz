@@ -61,7 +61,7 @@ void LFOSource::init(const ModKey& sourceKey, NumericId<Voice> voiceId, unsigned
     }
 
     lfo->configure(desc);
-    lfo->start(delay);
+    lfo->start(delay, voice->expressionChannel());
 }
 
 void LFOSource::generate(const ModKey& sourceKey, NumericId<Voice> voiceId, absl::Span<float> buffer)

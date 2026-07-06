@@ -21,7 +21,7 @@ void sfz::FilterHolder::reset()
     prepared = false;
 }
 
-void sfz::FilterHolder::setup(const Region& region, unsigned filterId, int noteNumber, float velocity)
+void sfz::FilterHolder::setup(const Region& region, unsigned filterId, int noteNumber, float velocity, int channel)
 {
     ASSERT(velocity >= 0.0f && velocity <= 1.0f);
     ASSERT(filterId < region.filters.size());
@@ -42,7 +42,7 @@ void sfz::FilterHolder::setup(const Region& region, unsigned filterId, int noteN
     auto veltrack = description->veltrack;
     for (const auto& mod : description->veltrackCC) {
         const auto& curve = resources.getCurves().getCurve(mod.data.curve);
-        const float value = resources.getMidiState().getCCValue(mod.cc);
+        const float value = resources.getMidiState().getCCValue(channel, mod.cc);
         veltrack += curve.evalNormalized(value) * mod.data.modifier;
     }
     baseCutoff *= centsFactor(veltrack * velocity);

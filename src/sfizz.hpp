@@ -666,6 +666,97 @@ public:
      */
     void hdPolyAftertouch(int delay, int noteNumber, float aftertouch) noexcept;
 
+    // === Channel-aware input API (MPE / multitimbral) ========================
+    //
+    // Overloads that take a MIDI channel argument. They populate per-channel
+    // modulation state in the underlying engine so voices triggered on a
+    // member channel respond independently to per-note pitch bend, per-note
+    // CC, and per-note aftertouch. Hosts that don't care about MPE can keep
+    // using the existing single-channel overloads; they are equivalent to
+    // calling the channel-taking overload with channel = 0 (master).
+    //
+    // setMPEEnabled() gates channel routing engine-wide: with MPE disabled,
+    // the channel-taking overloads collapse channel to 0 internally so both
+    // API surfaces behave identically (single-channel, pre-MPE semantics).
+    // With MPE enabled, the channel argument is honoured end-to-end and
+    // the MPE 1.0 spec-compliance filters (Manager-only CCs, member-channel
+    // Poly KP) apply.
+
+    /** @brief Send a note on event on a specific MIDI channel (0..15). */
+    void noteOn(int delay, int channel, int noteNumber, int velocity) noexcept;
+    /** @brief High-precision note on on a specific MIDI channel. */
+    void hdNoteOn(int delay, int channel, int noteNumber, float velocity) noexcept;
+    /** @brief Send a note off event on a specific MIDI channel (0..15). */
+    void noteOff(int delay, int channel, int noteNumber, int velocity) noexcept;
+    /** @brief High-precision note off on a specific MIDI channel. */
+    void hdNoteOff(int delay, int channel, int noteNumber, float velocity) noexcept;
+    /** @brief Send a CC event on a specific MIDI channel (0..15). */
+    void cc(int delay, int channel, int ccNumber, int ccValue) noexcept;
+    /** @brief High-precision CC on a specific MIDI channel. */
+    void hdcc(int delay, int channel, int ccNumber, float normValue) noexcept;
+    /** @brief Send a pitch bend event on a specific MIDI channel (0..15). */
+    void pitchWheel(int delay, int channel, int pitch) noexcept;
+    /** @brief High-precision pitch bend on a specific MIDI channel. */
+    void hdPitchWheel(int delay, int channel, float pitch) noexcept;
+    /** @brief Send a channel aftertouch event on a specific MIDI channel. */
+    void channelAftertouch(int delay, int channel, int aftertouch) noexcept;
+    /** @brief High-precision channel aftertouch on a specific MIDI channel. */
+    void hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept;
+    /** @brief Send a polyphonic aftertouch event on a specific MIDI channel. */
+    void polyAftertouch(int delay, int channel, int noteNumber, int aftertouch) noexcept;
+    /** @brief High-precision polyphonic aftertouch on a specific MIDI channel. */
+    void hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept;
+
+    /** @brief Enable or disable MPE mode (gates same-channel voice stealing). */
+    void setMPEEnabled(bool enabled) noexcept;
+    /** @brief Get the current MPE mode flag. */
+    bool getMPEEnabled() const noexcept;
+    /**
+     * @brief Set the MPE pitch bend range, in semitones (master / per-note).
+     * MPE 1.0 conventions: master 2 semitones, per-note 48 semitones.
+     */
+    void setMPEPitchBendRange(float masterSemitones, float perNoteSemitones) noexcept;
+    float getMPEMasterPitchBendRange() const noexcept;
+    float getMPEPerNotePitchBendRange() const noexcept;
+
+    /**
+     * @brief Toggle whether incoming MPE Pitch Bend Sensitivity (RPN 0)
+     * messages on the master channel update the master bend range.
+     * MPE Configuration Messages (RPN 6) are processed unconditionally.
+     * Defaults to true.
+     */
+    void setMPEMasterBendAutoConfigEnabled(bool enabled) noexcept;
+    bool getMPEMasterBendAutoConfigEnabled() const noexcept;
+    /**
+     * @brief Toggle whether incoming MPE Pitch Bend Sensitivity (RPN 0)
+     * messages on member channels update the per-note bend range.
+     * Defaults to true.
+     */
+    void setMPEPerNoteBendAutoConfigEnabled(bool enabled) noexcept;
+    bool getMPEPerNoteBendAutoConfigEnabled() const noexcept;
+
+    /**
+     * @brief Diagnostic count of Polyphonic Key Pressure events the engine
+     * dropped because they arrived on a Member Channel while MPE was
+     * enabled. MPE 1.0 §2.2.7 / Appendix E Table 5 prohibit Poly KP on
+     * Member Channels; the engine silently drops them and increments this
+     * counter so hosts / tests can observe spec-violating traffic.
+     */
+    int getDroppedPolyKpOnMemberCount() const noexcept;
+
+    /**
+     * @brief Diagnostic count of Manager-only CC messages the engine
+     * dropped because they arrived on a Member Channel while MPE was
+     * enabled. MPE 1.0 §2.3.1 / §2.3.3 (Appendix E Table 5) require pedal
+     * CCs (64-69), mode/reset CCs (120-125 excluding 122) and Bank Select
+     * (CC 0 / CC 32) to be honoured only on the Manager Channel; the
+     * engine silently drops them and increments this counter so hosts /
+     * tests can observe spec-violating traffic.
+     */
+    int getDroppedManagerOnlyMessageCount() const noexcept;
+
+    // =========================================================================
+
     /**
      * @brief Send a tempo event to the synth.
      *

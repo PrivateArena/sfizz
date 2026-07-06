@@ -70,7 +70,7 @@ public:
        Start processing a LFO as a region is triggered.
        Prepares the delay, phases, fade-in, etc..
      */
-    void start(unsigned triggerDelay);
+    void start(unsigned triggerDelay, int channel = 0);
 
     /**
        Process a cycle of the oscillator.

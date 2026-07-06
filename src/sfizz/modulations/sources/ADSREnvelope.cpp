@@ -79,7 +79,7 @@ void ADSREnvelopeSource::init(const ModKey& sourceKey, NumericId<Voice> voiceId,
 
     const TriggerEvent& triggerEvent = voice->getTriggerEvent();
     const float sampleRate = voice->getSampleRate();
-    eg->reset(*desc, *region, delay, triggerEvent.value, sampleRate);
+    eg->reset(*desc, *region, delay, triggerEvent.value, sampleRate, voice->expressionChannel());
 }
 
 void ADSREnvelopeSource::release(const ModKey& sourceKey, NumericId<Voice> voiceId, unsigned delay)

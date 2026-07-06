@@ -238,6 +238,12 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
         break;
 
     // Region logic: MIDI conditions
+    case hash("lochan"):
+        channelRange.setStart(opcode.read(Default::loChannel));
+        break;
+    case hash("hichan"):
+        channelRange.setEnd(opcode.read(Default::hiChannel));
+        break;
     case hash("lobend"):
         bendRange.setStart(opcode.read(Default::loBend));
         break;
@@ -861,8 +867,6 @@ bool sfz::Region::parseOpcode(const Opcode& rawOpcode, bool cleanOpcode)
         break;
 
     // Ignored opcodes
-    case hash("hichan"):
-    case hash("lochan"):
     case hash("ampeg_depth"):
     case hash("ampeg_veltodepth"): // also ampeg_vel2depth
         break;
