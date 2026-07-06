@@ -1594,15 +1594,16 @@ void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normVa
     ASSERT(ccNumber >= 0);
 
     // MPE 1.0 §2.3.1 / §2.3.3: zone-wide messages (pedal CCs, mode/reset,
-    // Bank Select) must only be honoured on the Manager Channel. Drop on
-    // Member Channels before any side effects — the global early-returns
-    // for All-Notes-Off / Reset-All-Controllers further down would otherwise
-    // fire on a Member-Channel arrival, and Bank Select on a Member Channel
-    // would queue a bank for a Program Change that the host then has to
-    // filter separately. Gate on asMidi so internal automation paths
+    // Bank Select) must only be honoured on the Manager Channel. Redirect
+    // them to the manager channel so they apply zone-wide via ccDispatch's
+    // isMpeGlobalCC exemption path — the global early-returns for
+    // All-Notes-Off / Reset-All-Controllers fire correctly from there,
+    // and Bank Select queues its bank for a Program Change on the proper
+    // channel. Gate on asMidi so internal automation paths
     // (which conceptually target the Manager Channel) keep working.
     // Lower Zone only (Manager = channel 0); revisit when Upper Zone lands.
     if (asMidi && mpeEnabled_ && channel != MidiState::masterChannel && isManagerOnlyCC(ccNumber)) {
+        ++redirectedManagerOnlyCCs_;
         channel = MidiState::masterChannel;
     }
 
@@ -1946,9 +1947,9 @@ int Synth::getDroppedPolyKpOnMemberCount() const noexcept
     return impl_->droppedPolyKpOnMember_;
 }
 
-int Synth::getDroppedManagerOnlyMessageCount() const noexcept
+int Synth::getRedirectedManagerOnlyMessageCount() const noexcept
 {
-    return impl_->droppedManagerOnlyCCs_;
+    return impl_->redirectedManagerOnlyCCs_;
 }
 
 void Synth::tempo(int delay, float secondsPerBeat) noexcept

@@ -350,9 +350,9 @@ int sfz::Sfizz::getDroppedPolyKpOnMemberCount() const noexcept
     return synth->synth.getDroppedPolyKpOnMemberCount();
 }
 
-int sfz::Sfizz::getDroppedManagerOnlyMessageCount() const noexcept
+int sfz::Sfizz::getRedirectedManagerOnlyMessageCount() const noexcept
 {
-    return synth->synth.getDroppedManagerOnlyMessageCount();
+    return synth->synth.getRedirectedManagerOnlyMessageCount();
 }
 
 void sfz::Sfizz::tempo(int delay, float secondsPerBeat) noexcept

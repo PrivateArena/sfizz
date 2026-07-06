@@ -682,7 +682,7 @@ public:
      * does not carry a channel argument. Counter is not reset by
      * setMPEEnabled, polyphony changes, or SFZ reloads.
      */
-    int getDroppedManagerOnlyMessageCount() const noexcept;
+    int getRedirectedManagerOnlyMessageCount() const noexcept;
 
     // =========================================================================
 

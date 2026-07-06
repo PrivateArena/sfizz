@@ -265,9 +265,9 @@ int sfizz_get_dropped_poly_kp_on_member_count(sfizz_synth_t* synth)
 {
     return synth->synth.getDroppedPolyKpOnMemberCount();
 }
-int sfizz_get_dropped_manager_only_message_count(sfizz_synth_t* synth)
+int sfizz_get_redirected_manager_only_message_count(sfizz_synth_t* synth)
 {
-    return synth->synth.getDroppedManagerOnlyMessageCount();
+    return synth->synth.getRedirectedManagerOnlyMessageCount();
 }
 void sfizz_send_tempo(sfizz_synth_t* synth, int delay, float seconds_per_quarter)
 {
