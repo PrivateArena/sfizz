@@ -110,7 +110,12 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+option(SFIZZ_FAST_MATH "Enable -ffast-math (may cause accuracy/correctness issues)" OFF)
+
 function(sfizz_enable_fast_math NAME)
+    if(NOT SFIZZ_FAST_MATH)
+        return()
+    endif()
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options("${NAME}" PRIVATE "-ffast-math")
     elseif(MSVC)

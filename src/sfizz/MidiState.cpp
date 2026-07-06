@@ -307,7 +307,9 @@ void sfz::MidiState::ccEvent(int delay, int channel, int ccNumber, float ccValue
         return;
     if (ccNumber < 0 || ccNumber >= config::numCCs)
         return;
-    insertEventInVector(channelStates[channel].ccEvents[ccNumber], delay, ccValue, getCCValue(masterChannel, ccNumber));
+    auto& events = channelStates[channel].ccEvents[ccNumber];
+    const float sentinel = events.empty() ? getCCValue(masterChannel, ccNumber) : 0.0f;
+    insertEventInVector(events, delay, ccValue, sentinel);
 }
 
 float sfz::MidiState::getCCValue(int ccNumber) const noexcept

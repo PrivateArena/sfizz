@@ -322,6 +322,12 @@ public:
     void setChannelRestrictions(bool restricted) noexcept { hasChannelRestrictions_ = restricted; }
     bool getChannelRestrictions() const noexcept { return hasChannelRestrictions_; }
 
+    /**
+     * @brief The master MIDI channel (0 = Lower Zone / MIDI ch 1 on wire).
+     * Upper Zone (channel 15) is deferred; revisit when M3 lands.
+     */
+    static constexpr int masterChannel = 0;
+
 private:
 
     /**
@@ -394,7 +400,6 @@ private:
      * channel 16 as master, depending on zone configuration — currently
      * fixed at master=0 pending M3).
      */
-    static constexpr int masterChannel = 0;
     std::array<ChannelState, 16> channelStates;
 
     // MPE 1.0 defaults: master = 2 st, per-note = 48 st.

@@ -305,7 +305,7 @@ struct Synth::Impl final: public Parser::Listener {
     std::map<int, size_t> keyswitchLabelsMap_;
 
     // Set as sw_default if present in the file
-    std::array<absl::optional<uint8_t>, 16> currentSwitch_;
+    absl::optional<uint8_t> currentSwitch_;
     std::vector<std::string> unknownOpcodes_;
     using RegionViewVector = std::vector<Region*>;
     using LayerViewVector = std::vector<Layer*>;
@@ -410,7 +410,6 @@ struct Synth::Impl final: public Parser::Listener {
     // by features that need zone awareness (RPN-driven pitch-bend range
     // application, MPE-aware voice stealing) added in follow-up commits.
     bool mpeEnabled_ { false };
-    bool hasChannelRestrictions_ { false };
     float mpeMasterPitchBendRange_ { 2.0f };
     float mpePerNotePitchBendRange_ { 48.0f };
 

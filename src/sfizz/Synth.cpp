@@ -323,8 +323,7 @@ void Synth::Impl::clear()
     numOutputs_ = 1;
     noteOffset_ = 0;
     octaveOffset_ = 0;
-    for (auto& s : currentSwitch_)
-        s = absl::nullopt;
+    currentSwitch_ = absl::nullopt;
     defaultPath_ = "";
     image_ = "";
     midiState.resetNoteStates();
@@ -345,7 +344,6 @@ void Synth::Impl::clear()
     unknownOpcodes_.clear();
     modificationTime_ = absl::nullopt;
     playheadMoved_ = false;
-    hasChannelRestrictions_ = false;
     resources_.getMidiState().setChannelRestrictions(false);
 
     initEffectBuses();
@@ -728,8 +726,7 @@ bool Synth::loadSfzString(const fs::path& path, absl::string_view text)
 void Synth::Impl::setCurrentSwitch(uint8_t noteValue)
 {
     uint8_t value = noteValue + 12 * octaveOffset_ + noteOffset_;
-    for (int ch = 0; ch < 16; ++ch)
-        currentSwitch_[ch] = value;
+    currentSwitch_ = value;
 }
 
 void Synth::Impl::finalizeSfzLoad()
@@ -852,8 +849,8 @@ void Synth::Impl::finalizeSfzLoad()
         }
 
         if (region.lastKeyswitch) {
-            if (currentSwitch_[0])
-                layer.keySwitched_ = (*currentSwitch_[0] == *region.lastKeyswitch);
+            if (currentSwitch_)
+                layer.keySwitched_ = (*currentSwitch_ == *region.lastKeyswitch);
 
             if (region.keyswitchLabel)
                 setKeyswitchLabel(*region.lastKeyswitch, *region.keyswitchLabel);
@@ -861,8 +858,8 @@ void Synth::Impl::finalizeSfzLoad()
 
         if (region.lastKeyswitchRange) {
             auto& range = *region.lastKeyswitchRange;
-            if (currentSwitch_[0])
-                layer.keySwitched_ = range.containsWithEnd(*currentSwitch_[0]);
+            if (currentSwitch_)
+                layer.keySwitched_ = range.containsWithEnd(*currentSwitch_);
 
             if (region.keyswitchLabel) {
                 for (uint8_t note = range.getStart(), end = range.getEnd(); note <= end; note++)
@@ -980,14 +977,14 @@ void Synth::Impl::finalizeSfzLoad()
 
     modificationTime_ = checkModificationTime();
 
-    hasChannelRestrictions_ = false;
+    bool hasChannelRestrictions = false;
     for (const LayerPtr& layerPtr : layers_) {
         if (layerPtr->getRegion().hasCustomChannelRange()) {
-            hasChannelRestrictions_ = true;
+            hasChannelRestrictions = true;
             break;
         }
     }
-    resources_.getMidiState().setChannelRestrictions(hasChannelRestrictions_);
+    resources_.getMidiState().setChannelRestrictions(hasChannelRestrictions);
 
     settingsPerVoice_.maxFilters = maxFilters;
     settingsPerVoice_.maxEQs = maxEQs;
@@ -1326,7 +1323,7 @@ void Synth::hdNoteOn(int delay, int channel, int noteNumber, float normalizedVel
     // triggerChannel_=0. The legacy non-MPE API already passes channel=0
     // here, so this only affects callers that reached the *MPE entry directly
     // with a non-zero channel while MPE was off.
-    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+    if (!impl.mpeEnabled_ && !impl.resources_.getMidiState().getChannelRestrictions())
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1358,7 +1355,7 @@ void Synth::hdNoteOff(int delay, int channel, int noteNumber, float normalizedVe
     ASSERT(noteNumber < 128);
     ASSERT(noteNumber >= 0);
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+    if (!impl.mpeEnabled_ && !impl.resources_.getMidiState().getChannelRestrictions())
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1445,13 +1442,13 @@ void Synth::Impl::noteOnDispatch(int delay, int channel, int noteNumber, float v
     MidiState& midiState = resources_.getMidiState();
 
     if (!lastKeyswitchLists_[noteNumber].empty()) {
-        if (currentSwitch_[channel] && *currentSwitch_[channel] != noteNumber) {
-            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_[channel]]) {
+        if (currentSwitch_ && *currentSwitch_ != noteNumber) {
+            for (Layer* layer : lastKeyswitchLists_[*currentSwitch_]) {
                 if (layer->getRegion().channelRange.containsWithEnd(channel + 1))
                     layer->keySwitched_ = false;
             }
         }
-        currentSwitch_[channel] = noteNumber;
+        currentSwitch_ = noteNumber;
     }
 
     for (Layer* layer : lastKeyswitchLists_[noteNumber]) {
@@ -1540,7 +1537,7 @@ void Synth::Impl::ccDispatch(int delay, int channel, int ccNumber, float value, 
         const Region& region = layer->getRegion();
 
         // MPE master CC (channel=0 with MPE active) applies zone-wide; skip range check.
-        const bool isMpeGlobalCC = mpeEnabled_ && (channel == 0);
+        const bool isMpeGlobalCC = mpeEnabled_ && (channel == MidiState::masterChannel);
         if (!isMpeGlobalCC && !region.channelRange.containsWithEnd(channel + 1))
             continue;
 
@@ -1605,9 +1602,8 @@ void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normVa
     // filter separately. Gate on asMidi so internal automation paths
     // (which conceptually target the Manager Channel) keep working.
     // Lower Zone only (Manager = channel 0); revisit when Upper Zone lands.
-    if (asMidi && mpeEnabled_ && channel != 0 && isManagerOnlyCC(ccNumber)) {
-        ++droppedManagerOnlyCCs_;
-        return;
+    if (asMidi && mpeEnabled_ && channel != MidiState::masterChannel && isManagerOnlyCC(ccNumber)) {
+        channel = MidiState::masterChannel;
     }
 
     ScopedTiming logger { dispatchDuration_, ScopedTiming::Operation::addToDuration };
@@ -1637,7 +1633,7 @@ void Synth::Impl::performHdcc(int delay, int channel, int ccNumber, float normVa
     // RPN 0 (Pitch Bend Sensitivity) updates to the correct zone (master
     // bend range vs per-note bend range).
     // MidiState write + voice CC updates that follow are the channel-aware storage path.
-    if (!mpeEnabled_ && !hasChannelRestrictions_)
+    if (!mpeEnabled_ && !resources_.getMidiState().getChannelRestrictions())
         channel = 0;
 
     for (auto& voice : voiceManager_)
@@ -1698,7 +1694,7 @@ void Synth::Impl::handleRpnControlCC(int channel, int ccNumber, float normValue)
             // target set uses it. data7 == 0 disables MPE, 1..15 enables
             // and announces member-channel count (informational — sfizz
             // already accepts events on all 16 channels regardless).
-            if (channel != 0)
+            if (channel != MidiState::masterChannel)
                 return;
             mpeEnabled_ = (data7 >= 1 && data7 <= 15);
         } else if (state.selectedRpn == 0) {
@@ -1707,7 +1703,7 @@ void Synth::Impl::handleRpnControlCC(int channel, int ccNumber, float normValue)
             // applied to all members (commercial controllers send the
             // same value on every member channel).
             const float newRange = static_cast<float>(data7);
-            if (channel == 0) {
+            if (channel == MidiState::masterChannel) {
                 if (!mpeMasterBendAutoConfigEnabled_)
                     return;
                 mpeMasterPitchBendRange_ = newRange;
@@ -1773,20 +1769,20 @@ void Synth::pitchWheel(int delay, int channel, int pitch) noexcept
 void Synth::hdPitchWheel(int delay, int channel, float normalizedPitch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+    if (!impl.mpeEnabled_ && !impl.resources_.getMidiState().getChannelRestrictions())
         channel = 0;
  
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
     impl.resources_.getMidiState().pitchBendEvent(delay, channel, normalizedPitch);
 
-    // M3b: layer- and voice-side registration of pitch bend stays
-    // channel-agnostic for now. Voices read the channel-correct value
-    // via per-voice triggerChannel_-aware MidiState reads, so the
-    // master-channel registerPitchWheel call is harmless cross-talk
-    // bookkeeping. A follow-up commit can filter these to voices on
-    // the matching channel when MPE is enabled.
-    for (const Impl::LayerPtr& layer : impl.layers_)
+    for (const Impl::LayerPtr& layer : impl.layers_) {
+        const Region& region = layer->getRegion();
+        if (impl.mpeEnabled_ || impl.resources_.getMidiState().getChannelRestrictions()) {
+            if (!region.channelRange.containsWithEnd(channel + 1))
+                continue;
+        }
         layer->registerPitchWheel(normalizedPitch);
+    }
 
     for (auto& voice : impl.voiceManager_)
         voice.registerPitchWheel(delay, normalizedPitch);
@@ -1823,7 +1819,7 @@ void Synth::channelAftertouch(int delay, int channel, int aftertouch) noexcept
 void Synth::hdChannelAftertouch(int delay, int channel, float normAftertouch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+    if (!impl.mpeEnabled_ && !impl.resources_.getMidiState().getChannelRestrictions())
         channel = 0;
     ScopedTiming logger { impl.dispatchDuration_, ScopedTiming::Operation::addToDuration };
 
@@ -1858,7 +1854,7 @@ void Synth::polyAftertouch(int delay, int channel, int noteNumber, int aftertouc
 void Synth::hdPolyAftertouch(int delay, int channel, int noteNumber, float normAftertouch) noexcept
 {
     Impl& impl = *impl_;
-    if (!impl.mpeEnabled_ && !impl.hasChannelRestrictions_)
+    if (!impl.mpeEnabled_ && !impl.resources_.getMidiState().getChannelRestrictions())
         channel = 0;
 
     // MPE 1.0 §2.2.7 / Appendix E Table 5: Polyphonic Key Pressure is
@@ -1869,7 +1865,7 @@ void Synth::hdPolyAftertouch(int delay, int channel, int noteNumber, float normA
     // devices. Drop early so dropped events neither update MidiState nor
     // reach the mod-matrix; the polyphonicAftertouch ExtendedCC path further
     // down runs only on accepted events.
-    if (impl.mpeEnabled_ && channel != 0) {
+    if (impl.mpeEnabled_ && channel != MidiState::masterChannel) {
         ++impl.droppedPolyKpOnMember_;
         return;
     }

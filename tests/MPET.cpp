@@ -704,52 +704,54 @@ TEST_CASE("[MPE] Damper on the Manager Channel is registered when MPE is enabled
     REQUIRE(mid.getCCValue(/*channel=*/0, 64) == 127_norm);
 }
 
-TEST_CASE("[MPE] Damper on a Member Channel is dropped when MPE is enabled")
+TEST_CASE("[MPE] Damper on a Member Channel is redirected to Manager Channel when MPE is enabled")
 {
     sfz::Synth synth;
     synth.setMPEEnabled(true);
     synth.cc(0, /*channel=*/2, /*ccNumber=*/64, 127);
-    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 1);
+    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 0);
     auto& mid = synth.getResources().getMidiState();
-    REQUIRE(mid.getCCValue(/*channel=*/2, 64) == 0.0_a);
+    REQUIRE(mid.getCCValue(/*channel=*/0, 64) == 127_norm);
 }
 
-TEST_CASE("[MPE] All pedal CCs 64-69 drop on Member Channels under MPE")
+TEST_CASE("[MPE] All pedal CCs 64-69 arrive on Manager Channel when redirected")
 {
     sfz::Synth synth;
     synth.setMPEEnabled(true);
     for (int cc : {64, 65, 66, 67, 68, 69})
         synth.cc(0, /*channel=*/3, cc, 127);
-    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 6);
+    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 0);
+    auto& mid = synth.getResources().getMidiState();
+    for (int cc : {64, 65, 66, 67, 68, 69})
+        REQUIRE(mid.getCCValue(/*channel=*/0, cc) == 127_norm);
 }
 
-TEST_CASE("[MPE] All Notes Off on a Member Channel is dropped when MPE is enabled")
+TEST_CASE("[MPE] All Notes Off on a Member Channel redirects to Manager Channel when MPE is enabled")
 {
     sfz::Synth synth;
     synth.setMPEEnabled(true);
     synth.cc(0, /*channel=*/2, /*ccNumber=*/123, 0);
-    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 1);
-    // The CC must not reach MidiState even though All-Notes-Off normally
-    // hits a global early-return path in performHdcc.
+    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 0);
+    // The CC is redirected to the Manager channel so the global reset fires.
     auto& mid = synth.getResources().getMidiState();
     REQUIRE(mid.getCCValue(/*channel=*/2, 123) == 0.0_a);
 }
 
-TEST_CASE("[MPE] Reset All Controllers on a Member Channel is dropped when MPE is enabled")
+TEST_CASE("[MPE] Reset All Controllers on a Member Channel redirects to Manager Channel when MPE is enabled")
 {
     sfz::Synth synth;
     synth.setMPEEnabled(true);
     synth.cc(0, /*channel=*/4, /*ccNumber=*/121, 0);
-    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 1);
+    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 0);
 }
 
-TEST_CASE("[MPE] Bank Select MSB/LSB on a Member Channel is dropped when MPE is enabled")
+TEST_CASE("[MPE] Bank Select MSB/LSB on a Member Channel redirects to Manager Channel when MPE is enabled")
 {
     sfz::Synth synth;
     synth.setMPEEnabled(true);
     synth.cc(0, /*channel=*/2, /*ccNumber=*/0, 5);   // Bank MSB
     synth.cc(0, /*channel=*/2, /*ccNumber=*/32, 3);  // Bank LSB
-    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 2);
+    REQUIRE(synth.getDroppedManagerOnlyMessageCount() == 0);
 }
 
 TEST_CASE("[MPE] Manager-only filter is inert when MPE is disabled")
