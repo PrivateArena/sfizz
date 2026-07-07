@@ -75,6 +75,7 @@ cmake_flags() {
     echo "-D SFIZZ_DEMOS=$5"
     echo "-D SFIZZ_DEVTOOLS=$6"
     echo "-D SFIZZ_FAST_MATH=$7"
+    echo "-D CMAKE_EXPORT_COMPILE_COMMANDS=ON"
 }
 
 build_plain() {
@@ -82,6 +83,7 @@ build_plain() {
     flags=$(cmake_flags "$RENDER" "$TESTS" "$BENCHMARKS" "$JACK" "$DEMOS" "$DEVTOOLS" "$FAST_MATH")
     cmake -S "$ROOT" -B "$ROOT/build_plain" $flags
     cmake --build "$ROOT/build_plain" --parallel
+    ln -sf "$ROOT/build_plain/compile_commands.json" "$ROOT/compile_commands.json"
 }
 
 build_optimized() {
@@ -94,6 +96,7 @@ build_optimized() {
         -D CMAKE_C_FLAGS="-O3 -march=native -flto" \
         -D CMAKE_CXX_FLAGS="-O3 -march=native -flto"
     cmake --build "$ROOT/build_optimized" --parallel
+    ln -sf "$ROOT/build_optimized/compile_commands.json" "$ROOT/compile_commands.json"
 }
 
 cmd="${1:-help}"
